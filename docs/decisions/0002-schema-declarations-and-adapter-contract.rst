@@ -46,6 +46,9 @@ custom ranking are absent until a consumer needs them. Course Discovery will
 bring geo, custom ranking, unordered search and nested skills; the Typesense
 adapter will bring nested fields and per-field flags.
 
+``datetime`` is a logical type: values are POSIX timestamps in seconds (UTC),
+stored as numbers, because neither engine has a native date type.
+
 Adapters render ``IndexSchema`` in ``configure(schema)``. There is no second
 authored schema. A derived projection may exist internally, but must not become
 another type to maintain.
