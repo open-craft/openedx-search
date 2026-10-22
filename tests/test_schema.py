@@ -68,10 +68,22 @@ def test_field_defaults():
     """A bare field is a string with no capability flags set."""
     entry = Field("title")
     assert entry.type is FieldType.STRING
+    assert entry.required is False
     assert entry.capabilities.searchable is False
     assert entry.capabilities.filterable is False
     assert entry.capabilities.facetable is False
     assert entry.capabilities.sortable is False
+
+
+def test_required_fields_are_marked():
+    """Fields the content/search builders always provide are required."""
+    assert STUDIO_COURSE_SCHEMA.field("id").required is True
+    assert STUDIO_COURSE_SCHEMA.field("block_type").required is True
+    assert STUDIO_COURSE_SCHEMA.field("modified").required is False
+
+    assert STUDIO_LIBRARY_SCHEMA.field("type").required is True
+    assert STUDIO_LIBRARY_SCHEMA.field("created").required is True
+    assert STUDIO_LIBRARY_SCHEMA.field("block_type").required is False
 
 
 def test_facetable_implies_filterable():

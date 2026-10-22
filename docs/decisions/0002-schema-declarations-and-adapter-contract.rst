@@ -138,6 +138,10 @@ handed to any adapter, the library checks it against the schema: field types,
 arrays, required fields and free-form objects. Adapters do not reimplement this,
 so every engine rejects the same bad document for the same reason.
 
+Fields are optional by default. A ``required`` field must be present and
+non-null; Typesense renders it as ``optional: false``, and the shared validator
+rejects documents that omit it.
+
 Reconciliation is versioned and runs on every deploy; the adapter owns its
 mechanics (Meilisearch PATCH and reindex, Typesense new collection plus alias).
 Lossy edges are reported by ``validate_schema`` or ``configure``, never dropped.

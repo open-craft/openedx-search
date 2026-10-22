@@ -141,13 +141,15 @@ class Field:
 
     Nested fields use dot paths (``tags.level0``), which is how all supported
     engines address them. ``additional_properties`` marks a free-form object
-    whose keys are not declared individually.
+    whose keys are not declared individually. ``required`` marks a field every
+    document must provide; the Typesense renderer emits ``optional: false``.
     """
 
     name: str
     type: FieldType | str = FieldType.STRING
     array: bool = False
     additional_properties: bool = False
+    required: bool = False
     capabilities: Capabilities = field(default_factory=Capabilities)
 
     def __post_init__(self) -> None:
