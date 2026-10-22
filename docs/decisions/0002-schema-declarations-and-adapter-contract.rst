@@ -56,8 +56,7 @@ another type to maintain.
 2. Registrations are engine-neutral
 ===================================
 
-A registration names the use case, the logical index, the schema and its query
-shape:
+A registration names the use case, the logical index and the schema:
 
 ::
 
@@ -65,7 +64,6 @@ shape:
       use_case        str
       index           str            logical index name
       schema          IndexSchema
-      query_shape     QueryShape     filters, facets, sort, defaults
 
 ``index`` is a logical name. An adapter maps it to its own namespace: a
 Meilisearch index UID, or a Typesense collection plus the alias used for
@@ -95,16 +93,21 @@ engine directly with a scoped credential.
 3. Adapters declare capabilities and share validation
 =====================================================
 
-Each adapter implements:
+Each adapter implements ``openedx_search.adapters.Adapter``:
 
 ::
 
-    validate_schema(schema)           -> None or raises UnsupportedSchema
-    configure(schema)                 -> renders and applies settings
-    upsert(documents)                 -> WriteReceipt
-    search(query)                     -> SearchResult
-    mint_credential(scope, expires)   -> str
-    reconcile(schema)                 -> ReconcileResult
+    validate_schema(schema)                                -> None or raises UnsupportedSchema
+    configure(schema)                                      -> renders and applies settings
+    reconcile(schema)                                      -> ReconcileResult
+    begin_rebuild(schema)                                  -> RebuildTarget
+    commit_rebuild(target)                                 -> None
+    abort_rebuild(target)                                  -> None
+    upsert(documents, target=None)                         -> WriteReceipt
+    delete(primary_keys=None, *, filter=None, target=None) -> WriteReceipt
+    check_write(receipt)                                   -> WriteReceipt
+    search(query)                                          -> SearchResult
+    mint_credential(scope, expires)                        -> str
 
 Each adapter implements ``validate_schema(schema)``. For the Meilisearch and
 Typesense adapters it is currently a no-op: both support every schema the library can
@@ -113,7 +116,7 @@ express. It is the hook for an adapter with a narrower feature set, which raises
 registration and before settings are applied; a use case that needs an
 unsupported capability fails there, not silently.
 
-For the two implemented adapters the method is a no-op:
+For the two adapters that will be implemented the method will be a no-op:
 
 .. code-block:: python
 
@@ -145,9 +148,77 @@ Fields are optional by default. A ``required`` field must be present and
 non-null; Typesense renders it as ``optional: false``, and the shared validator
 rejects documents that omit it.
 
-Reconciliation is versioned and runs on every deploy; the adapter owns its
-mechanics (Meilisearch PATCH and reindex, Typesense new collection plus alias).
-Lossy edges are reported by ``validate_schema`` or ``configure``, never dropped.
+``upsert`` and ``delete`` submit one bounded batch and return a
+``WriteReceipt``. ``upsert`` takes an iterable of documents. ``delete`` takes
+``primary_keys`` values of the declared primary key field (one value or a
+sequence) or the same abstract filter expression ``search`` accepts. Exactly one
+of ``primary_keys`` and ``filter`` is required, and neither may be empty, so a
+bare ``delete()`` cannot empty an index. Both methods accept an optional
+``target`` so the library can submit to a rebuild target.
+
+``check_write(receipt)`` performs one status check and returns an updated
+receipt, raising ``WriteFailed`` when the engine reports a failure. It never
+sleeps or retries; scheduling and backoff belong to the indexing worker, per
+ADR 0001 Decision 9. A synchronous engine returns an already-complete receipt
+without a request.
+
+A rebuild is a library operation, not a single adapter call. ``begin_rebuild``
+creates the target and returns a ``RebuildTarget``; ``commit_rebuild`` waits for
+the target's writes, swaps it into place and deletes the old target; and
+``abort_rebuild`` discards it. The library owns the orchestration and the
+target's shared state, because writes submitted while a rebuild runs must reach
+both the live index and the target. A registration does not own a document
+source, so the caller supplies one. Rebuilds are worker-only and versioned by
+``schema.version``.
+
+A rebuild is not a consistent snapshot. The document source reads from the
+consumer's database while writes continue. If a write reaches the target before
+the source writes the same document from an older read, the source's version
+wins in the target. A delete followed by the source yielding the deleted
+document has the same effect. The window is bounded by the time between the
+source's read and its write to the target. This matches the current
+``content/search`` rebuild and the dual-write recipe Typesense documents for
+zero-downtime reindexing. This ADR accepts the window rather than adding a
+delta log; callers that need a strict snapshot must stop writes for the
+duration of the rebuild.
+
+``reconcile`` compares the declared settings with the live index on every
+deploy and applies engine-compatible changes without reindexing documents. A
+version bump or an incompatible settings change requires the explicit rebuild
+above. The adapter owns the mechanics (Meilisearch PATCH and reindex, Typesense
+new collection plus alias). Lossy edges are reported by ``validate_schema`` or
+``configure``, never dropped.
+
+4. Consumers use a small write-first API
+========================================
+
+Consumers do not talk to adapters directly. ``openedx_search.api`` resolves the
+registration and backend and exposes four functions:
+
+::
+
+    upsert(use_case, documents)                         -> WriteReceipt
+    delete(use_case, primary_keys=None, *, filter=None) -> WriteReceipt
+    check_write(use_case, receipt)                      -> WriteReceipt
+    rebuild(use_case, document_source)                  -> RebuildResult
+
+``upsert`` and ``delete`` submit one bounded batch. ``documents`` is a sequence
+because a rebuild in progress submits the same batch twice. ``primary_keys``
+accepts one value or a sequence; the API normalizes it. ``filter`` is the same
+abstract expression as ``search``. Exactly one of ``primary_keys`` and
+``filter`` is required, and neither may be empty.
+
+``check_write`` performs one poll of the receipt's engine task. Retry and
+backoff belong to the worker. ``rebuild`` is worker-only.
+
+``rebuild`` resolves the registration, calls ``begin_rebuild``, records the
+target in shared state, and iterates ``document_source``. The source is a
+callable returning an iterator of batches, invoked in the rebuild worker, so a
+consumer can page through its database without materializing the corpus. Each
+batch goes to the target and is confirmed with ``check_write`` before the next
+is requested. While the target is recorded, ``upsert`` and ``delete`` submit to
+both the live index and the target. ``commit_rebuild`` swaps the target in and
+deletes the old target; any failure aborts it.
 
 Consequences
 ************
@@ -159,6 +230,9 @@ Consequences
 3. Unsupported capabilities fail at registration or startup, before data is
    indexed.
 4. Adding Algolia remains additive: capability flags plus a renderer.
+5. A rebuild is not point-in-time consistent: a document changed between the
+   source's read and its write can be indexed in its older form in the target.
+   The next write to that document, or a follow-up rebuild, corrects it.
 
 Alternatives Considered
 ***********************
