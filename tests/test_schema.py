@@ -75,6 +75,23 @@ def test_field_defaults():
     assert entry.capabilities.sortable is False
 
 
+def test_searchable_field_must_be_string_or_object():
+    """Typesense's ``query_by`` only searches string leaves."""
+    with pytest.raises(SchemaError, match="must be a string or object"):
+        Field("access_id", FieldType.INT64, capabilities=Capabilities(searchable=True))
+
+    entry = Field("title", FieldType.STRING, capabilities=Capabilities(searchable=True))
+    assert entry.capabilities.searchable is True
+
+    content = Field(
+        "content",
+        FieldType.OBJECT,
+        additional_properties=True,
+        capabilities=Capabilities(searchable=True),
+    )
+    assert content.capabilities.searchable is True
+
+
 def test_required_fields_are_marked():
     """Fields the content/search builders always provide are required."""
     assert STUDIO_COURSE_SCHEMA.field("id").required is True
@@ -110,6 +127,17 @@ def test_object_field_cannot_be_sortable():
         Field("tags", FieldType.OBJECT, capabilities=Capabilities(sortable=True))
 
 
+def test_array_field_cannot_be_sortable():
+    """Typesense cannot sort array fields."""
+    with pytest.raises(SchemaError, match="array field .* cannot be sortable"):
+        Field(
+            "tags.level0",
+            FieldType.STRING,
+            array=True,
+            capabilities=Capabilities(sortable=True),
+        )
+
+
 def test_additional_properties_requires_object():
     """Only object fields can be free-form."""
     with pytest.raises(SchemaError, match="additional_properties requires an object"):
@@ -134,6 +162,16 @@ def test_distinct_attribute_must_be_declared():
         IndexSchema(
             name="bad_distinct",
             fields=(Field("id"),),
+            distinct=Distinct(attribute="usage_key"),
+        )
+
+
+def test_distinct_attribute_must_be_facetable():
+    """Typesense's ``group_by`` needs a facet field."""
+    with pytest.raises(SchemaError, match="must be facetable"):
+        IndexSchema(
+            name="bad_distinct",
+            fields=(Field("id"), Field("usage_key", FieldType.STRING)),
             distinct=Distinct(attribute="usage_key"),
         )
 

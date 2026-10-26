@@ -47,7 +47,12 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
     primary_key="id",
     fields=(
         Field("id", FieldType.STRING, required=True),
-        Field("usage_key", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
+        Field(
+            "usage_key",
+            FieldType.STRING,
+            required=True,
+            capabilities=Capabilities(filterable=True, facetable=True),
+        ),
         Field(
             "block_id",
             FieldType.STRING,
@@ -128,7 +133,12 @@ STUDIO_LIBRARY_SCHEMA = IndexSchema(
     primary_key="id",
     fields=(
         Field("id", FieldType.STRING, required=True),
-        Field("usage_key", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
+        Field(
+            "usage_key",
+            FieldType.STRING,
+            required=True,
+            capabilities=Capabilities(filterable=True, facetable=True),
+        ),
         Field(
             "type",
             FieldType.STRING,

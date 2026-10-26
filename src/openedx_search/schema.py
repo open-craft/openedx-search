@@ -143,6 +143,8 @@ class Field:
     engines address them. ``additional_properties`` marks a free-form object
     whose keys are not declared individually. ``required`` marks a field every
     document must provide; the Typesense renderer emits ``optional: false``.
+    ``searchable`` is limited to string fields and objects; an array field
+    cannot be sortable.
     """
 
     name: str
@@ -164,8 +166,14 @@ class Field:
         )
         if self.additional_properties:
             _require(field_type is FieldType.OBJECT, "additional_properties requires an object field")
+        if self.capabilities.searchable:
+            _require(
+                field_type in (FieldType.STRING, FieldType.OBJECT),
+                f"searchable field {self.name!r} must be a string or object",
+            )
         if self.capabilities.sortable:
             _require(field_type is not FieldType.OBJECT, f"object field {self.name!r} cannot be sortable")
+            _require(not self.array, f"array field {self.name!r} cannot be sortable")
 
 
 @dataclass(frozen=True)
@@ -195,7 +203,9 @@ class IndexSchema:
 
     ``name`` identifies the schema, not necessarily the index it is mounted
     under: a use-case registration carries the logical index name, which lets
-    two registrations share one schema.
+    two registrations share one schema. A ``distinct`` attribute must be
+    declared and ``facetable``; Typesense's ``group_by`` requires a facet field
+    (https://typesense.org/docs/30.2/api/search.html#group_by).
     """
 
     name: str
@@ -228,6 +238,10 @@ class IndexSchema:
             _require(
                 self.distinct.attribute in by_name,
                 f"distinct attribute {self.distinct.attribute!r} is not declared",
+            )
+            _require(
+                by_name[self.distinct.attribute].capabilities.facetable,
+                f"distinct attribute {self.distinct.attribute!r} must be facetable",
             )
 
     def field(self, name: str) -> Field:

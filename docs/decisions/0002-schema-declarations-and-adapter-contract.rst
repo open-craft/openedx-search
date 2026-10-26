@@ -109,12 +109,18 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
     search(query)                                          -> SearchResult
     mint_credential(scope, expires)                        -> str
 
-Each adapter implements ``validate_schema(schema)``. For the Meilisearch and
-Typesense adapters it is currently a no-op: both support every schema the library can
-express. It is the hook for an adapter with a narrower feature set, which raises
-``UnsupportedSchema`` naming the parts it cannot represent. It runs at
-registration and before settings are applied; a use case that needs an
-unsupported capability fails there, not silently.
+Each adapter implements ``validate_schema(schema)``. The shared model already
+rejects declarations that either implemented engine cannot represent: a
+``distinct`` attribute must be ``facetable``, a ``searchable`` field must be a
+string or an object whose leaves are strings, and an array field cannot be
+``sortable``. Typesense's ``group_by`` requires a facet field; see
+`the Typesense search API
+<https://typesense.org/docs/30.2/api/search.html#group_by>`_.
+``validate_schema`` is therefore a no-op for the Meilisearch and Typesense
+adapters once they are implemented. It is the hook for an adapter with a
+narrower feature set, which raises ``UnsupportedSchema`` naming the parts it
+cannot represent. It runs at registration and before settings are applied; a use
+case that needs an unsupported capability fails there, not silently.
 
 For the two adapters that will be implemented the method will be a no-op:
 
