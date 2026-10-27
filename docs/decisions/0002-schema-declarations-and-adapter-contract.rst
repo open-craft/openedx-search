@@ -56,7 +56,8 @@ another type to maintain.
 2. Registrations are engine-neutral
 ===================================
 
-A registration names the use case, the logical index and the schema:
+Each use case (e.g. course discovery, library content search, courseware search, ...) must be registered.
+A "registration" declares one use case, and specifies the associated logical index and its schema:
 
 ::
 
