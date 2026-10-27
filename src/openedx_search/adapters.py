@@ -10,7 +10,7 @@ class exists so an engine contribution has one place to see the full surface.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 
@@ -158,7 +158,7 @@ class Adapter(ABC):
         """Discard ``target`` after a failed rebuild."""
 
     @abstractmethod
-    def upsert(self, documents: Iterable[Document], target: RebuildTarget | None = None) -> WriteReceipt:
+    def upsert(self, documents: DocumentBatch, target: RebuildTarget | None = None) -> WriteReceipt:
         """Submit one bounded batch of documents for upsert."""
 
     @abstractmethod

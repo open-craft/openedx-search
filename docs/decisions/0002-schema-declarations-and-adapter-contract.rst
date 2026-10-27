@@ -86,11 +86,6 @@ The library ships no default engine.
 Registrations are loaded by the consumer from its own ``AppConfig.ready()``.
 The library does not scan packages or import registration modules.
 
-Query contracts are separate from the schema. Callers build filter terms and
-adapters render them; raw filter strings do not cross the API. ``search`` is for
-maintenance and conformance, not the Studio browser path, which queries the
-engine directly with a scoped credential.
-
 3. Adapters declare capabilities and share validation
 =====================================================
 
@@ -155,8 +150,17 @@ Fields are optional by default. A ``required`` field must be present and
 non-null; Typesense renders it as ``optional: false``, and the shared validator
 rejects documents that omit it.
 
+``configure`` renders and applies the declared settings. ``reconcile`` compares
+the declared settings with the live index on every deploy and applies
+engine-compatible changes without reindexing documents. A version bump or an
+incompatible settings change requires the explicit rebuild in section 4. The
+adapter owns the mechanics (Meilisearch PATCH and reindex, Typesense new
+collection plus alias). Lossy edges are reported by ``validate_schema`` or
+``configure``, never dropped.
+
 ``upsert`` and ``delete`` submit one bounded batch and return a
-``WriteReceipt``. ``upsert`` takes an iterable of documents. ``delete`` takes
+``WriteReceipt``. ``upsert`` takes one bounded batch, a sequence of documents.
+``delete`` takes
 ``primary_keys`` values of the declared primary key field (one value or a
 sequence) or the same abstract filter expression ``search`` accepts. Exactly one
 of ``primary_keys`` and ``filter`` is required, and neither may be empty, so a
@@ -169,54 +173,75 @@ sleeps or retries; scheduling and backoff belong to the indexing worker, per
 ADR 0001 Decision 9. A synchronous engine returns an already-complete receipt
 without a request.
 
-A rebuild is a library operation, not a single adapter call. ``begin_rebuild``
-creates the target and returns a ``RebuildTarget``; ``commit_rebuild`` waits for
-the target's writes, swaps it into place and deletes the old target; and
-``abort_rebuild`` discards it. The library owns the orchestration and the
-target's shared state, because writes submitted while a rebuild runs must reach
-both the live index and the target. A registration does not own a document
-source, so the caller supplies one. Rebuilds are worker-only and versioned by
-``schema.version``.
+``begin_rebuild(schema)`` creates the target and returns a ``RebuildTarget``.
+``commit_rebuild(target)`` waits for the target's writes, swaps it into place
+and deletes the old target. ``abort_rebuild(target)`` discards it. The library
+orchestrates these primitives in section 4.
 
-A rebuild is not a consistent snapshot. The document source reads from the
-consumer's database while writes continue. If a write reaches the target before
-the source writes the same document from an older read, the source's version
-wins in the target. A delete followed by the source yielding the deleted
-document has the same effect. The window is bounded by the time between the
-source's read and its write to the target. This matches the current
-``content/search`` rebuild and the dual-write recipe Typesense documents for
-zero-downtime reindexing. This ADR accepts the window rather than adding a
-delta log; callers that need a strict snapshot must stop writes for the
-duration of the rebuild.
+``search`` and ``mint_credential`` are the read-side adapter methods; section 4
+describes their consumer contract.
 
-``reconcile`` compares the declared settings with the live index on every
-deploy and applies engine-compatible changes without reindexing documents. A
-version bump or an incompatible settings change requires the explicit rebuild
-above. The adapter owns the mechanics (Meilisearch PATCH and reindex, Typesense
-new collection plus alias). Lossy edges are reported by ``validate_schema`` or
-``configure``, never dropped.
-
-4. Consumers use a small write-first API
-========================================
+4. Consumers use a small API
+============================
 
 Consumers do not talk to adapters directly. ``openedx_search.api`` resolves the
-registration and backend and exposes four functions:
+registration and backend and exposes these functions:
 
 ::
 
+    search(use_case, query)                             -> SearchResult
+    mint_credential(use_case, scope, expires)           -> str
     upsert(use_case, documents)                         -> WriteReceipt
     delete(use_case, primary_keys=None, *, filter=None) -> WriteReceipt
     check_write(use_case, receipt)                      -> WriteReceipt
     rebuild(use_case, document_source)                  -> RebuildResult
 
-``upsert`` and ``delete`` submit one bounded batch. ``documents`` is a sequence
-because a rebuild in progress submits the same batch twice. ``primary_keys``
-accepts one value or a sequence; the API normalizes it. ``filter`` is the same
-abstract expression as ``search``. Exactly one of ``primary_keys`` and
-``filter`` is required, and neither may be empty.
+The consumer functions delegate to the adapter contract in section 3. The
+library adds only the behaviour below.
 
-``check_write`` performs one poll of the receipt's engine task. Retry and
-backoff belong to the worker. ``rebuild`` is worker-only.
+.. list-table::
+   :header-rows: 1
+
+   * - Consumer API
+     - Adapter methods
+     - Library-owned behaviour
+   * - ``search``
+     - ``search``
+     - none
+   * - ``mint_credential``
+     - ``mint_credential``
+     - none
+   * - ``upsert``
+     - ``upsert``
+     - one bounded batch (a sequence); dual-write during rebuild
+   * - ``delete``
+     - ``delete``
+     - normalize ``primary_keys``; exactly one form; dual-write
+   * - ``check_write``
+     - ``check_write``
+     - none; the worker owns backoff
+   * - ``rebuild``
+     - ``begin_rebuild``, ``commit_rebuild`` / ``abort_rebuild``
+     - stream source; dual-write; accepted race
+
+``search`` is for maintenance and conformance, not the frontend search path:
+the browser queries the engine directly with a scoped credential, per ADR 0001
+Decision 7. Query terms are per request, not part of the schema: callers build
+filter terms and adapters render them, and raw filter strings do not cross the
+API.
+
+``mint_credential`` returns that scoped, expiring credential, derived locally
+(Meilisearch tenant tokens, Typesense scoped search keys), so Django is not in
+the search path.
+
+``upsert`` and ``delete`` take one bounded batch. ``documents`` is a sequence
+because a rebuild in progress submits the same batch twice. The API normalizes
+a single primary key to a tuple and otherwise uses the delete forms from
+section 3. During a rebuild, both functions submit to the live index and the
+target.
+
+``check_write`` delegates one poll to the adapter; the worker owns retry and
+backoff (section 3).
 
 ``rebuild`` resolves the registration, calls ``begin_rebuild``, records the
 target in shared state, and iterates ``document_source``. The source is a
@@ -226,6 +251,15 @@ batch goes to the target and is confirmed with ``check_write`` before the next
 is requested. While the target is recorded, ``upsert`` and ``delete`` submit to
 both the live index and the target. ``commit_rebuild`` swaps the target in and
 deletes the old target; any failure aborts it.
+
+A rebuild is not a consistent snapshot. The document source reads from the
+consumer's database while writes continue. If a write reaches the target before
+the source writes the same document from an older read, the source's version
+wins in the target. A delete followed by the source yielding the deleted
+document has the same effect. The window is bounded by the time between the
+source's read and its write to the target. This matches the current
+``content/search`` rebuild and the dual-write recipe Typesense documents for
+zero-downtime reindexing.
 
 Consequences
 ************

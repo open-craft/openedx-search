@@ -5,17 +5,17 @@ ADR 0002, Decision 4: consumers use this module rather than talking to an
 adapter. The functions resolve the registration and backend internally. The
 registry helpers in ``openedx_search.registry`` are not part of this surface.
 
-These functions are currently signatures and contracts only; the write and
-rebuild implementations land with the engine adapters.
+These functions are currently signatures and contracts only; the
+implementations land with the engine adapters.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
-from .adapters import Document, DocumentBatch, FilterExpression, PrimaryKey, RebuildTarget, WriteReceipt
+from .adapters import DocumentBatch, FilterExpression, PrimaryKey, RebuildTarget, SearchResult, WriteReceipt
 
 __all__ = [
     "DocumentSource",
@@ -23,7 +23,9 @@ __all__ = [
     "RebuildResult",
     "check_write",
     "delete",
+    "mint_credential",
     "rebuild",
+    "search",
     "upsert",
 ]
 
@@ -42,7 +44,7 @@ class RebuildResult:
     documents: int
 
 
-def upsert(use_case: str, documents: Sequence[Document]) -> WriteReceipt:
+def upsert(use_case: str, documents: DocumentBatch) -> WriteReceipt:
     """
     Submit one bounded batch of documents for upsert.
 
@@ -101,10 +103,9 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     materializing the corpus. Paging, resumability and progress reporting
     belong to the source.
 
-    The rebuild is worker-only and versioned by the schema's ``version``. The
-    library creates the target, records it so concurrent writes reach both the
-    live index and the target, confirms each source batch, and swaps the target
-    in only after its writes are complete. A failure aborts the target.
+    The library creates the target, records it so concurrent writes reach both
+    the live index and the target, confirms each source batch, and swaps the
+    target in only after its writes are complete. A failure aborts the target.
 
     A rebuild is not a consistent snapshot. A write that reaches the target
     before the source writes the same document from an older read wins in the
@@ -114,3 +115,24 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     duration of the rebuild.
     """
     raise NotImplementedError("rebuild is implemented with the engine adapters")
+
+
+def search(use_case: str, query: Any) -> SearchResult:
+    """
+    Run one query through the adapter.
+
+    This is for maintenance and conformance, not the frontend search path. The
+    browser queries the engine directly with a scoped credential, so this does
+    not proxy the frontend's searches. The query model lands with the query API.
+    """
+    raise NotImplementedError("search is implemented with the engine adapters")
+
+
+def mint_credential(use_case: str, scope: Mapping[str, Any], expires: int) -> str:
+    """
+    Mint a scoped, expiring credential for direct frontend queries.
+
+    The credential is derived locally (Meilisearch tenant tokens, Typesense
+    scoped search keys); no request is proxied through Django.
+    """
+    raise NotImplementedError("mint_credential is implemented with the engine adapters")
