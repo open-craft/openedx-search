@@ -6,8 +6,8 @@ per use case. It is plain Python (no Django, no engine client), so it can be
 imported from application code, management commands and tests.
 
 Only the surface the current consumers use is modelled: document fields,
-searchable order, filterable, facetable and sortable capabilities, ranking
-rules and a distinct attribute. Engine-specific settings such as typo
+searchable order, filterable, facetable and sortable capabilities, a sort
+precedence flag and a distinct attribute. Engine-specific settings such as typo
 tolerance, synonyms, tokenization, vectors and replicas are deliberately
 absent; add them when a consumer needs them.
 """
@@ -24,8 +24,6 @@ __all__ = [
     "Field",
     "FieldType",
     "IndexSchema",
-    "Ranking",
-    "RankingRule",
     "SchemaError",
     "Searchable",
 ]
@@ -56,17 +54,6 @@ class FieldType(StrEnum):
     GEOPOINT = "geopoint"
     OBJECT = "object"
     UNKNOWN = "unknown"
-
-
-class RankingRule(StrEnum):
-    """Engine-neutral ranking rules used by the current consumers."""
-
-    TYPO = "typo"
-    WORDS = "words"
-    PROXIMITY = "proximity"
-    ATTRIBUTE = "attribute"
-    EXACTNESS = "exactness"
-    SORT = "sort"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -177,19 +164,6 @@ class Field:
 
 
 @dataclass(frozen=True)
-class Ranking:
-    """Ordered ranking rules."""
-
-    rules: tuple[RankingRule | str, ...] = ()
-
-    def __post_init__(self) -> None:
-        """Normalize and validate the rule list."""
-        rules = tuple(_enum(RankingRule, rule, "ranking rule") for rule in self.rules)
-        _require(len(set(rules)) == len(rules), "ranking rules must be unique")
-        object.__setattr__(self, "rules", rules)
-
-
-@dataclass(frozen=True)
 class Distinct:
     """Deduplicate hits by a field value."""
 
@@ -203,8 +177,10 @@ class IndexSchema:
 
     ``name`` identifies the schema, not necessarily the index it is mounted
     under: a use-case registration carries the logical index name, which lets
-    two registrations share one schema. A ``distinct`` attribute must be
-    declared and ``facetable``; Typesense's ``group_by`` requires a facet field
+    two registrations share one schema. ``sort_overrides_relevance`` controls
+    whether an explicit sort takes precedence over keyword relevance. A
+    ``distinct`` attribute must be declared and ``facetable``; Typesense's
+    ``group_by`` requires a facet field
     (https://typesense.org/docs/30.2/api/search.html#group_by).
     """
 
@@ -212,13 +188,17 @@ class IndexSchema:
     version: int = 1
     primary_key: str = "id"
     fields: tuple[Field, ...] = ()
-    ranking: Ranking | None = None
+    sort_overrides_relevance: bool = True
     distinct: Distinct | None = None
 
     def __post_init__(self) -> None:
         """Validate cross-field invariants and freeze the field tuple."""
         _require(bool(INDEX_NAME_PATTERN.match(self.name)), f"invalid schema name {self.name!r}")
         _require(self.version >= 1, "schema version must be >= 1")
+        _require(
+            isinstance(self.sort_overrides_relevance, bool),
+            "sort_overrides_relevance must be a bool",
+        )
 
         fields = tuple(self.fields)
         _require(bool(fields), "a schema needs at least one field")

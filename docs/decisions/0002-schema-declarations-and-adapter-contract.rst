@@ -39,7 +39,11 @@ There is one authored declaration, ``IndexSchema``:
   ``additional_properties`` and the capabilities;
 * four capabilities: ``searchable`` (with ``order``), ``filterable``,
   ``facetable`` and ``sortable``;
-* ``ranking`` rules and an optional ``distinct`` attribute.
+* a ``sort_overrides_relevance`` flag and an optional ``distinct`` attribute.
+
+``sort_overrides_relevance`` is true by default, matching the current Studio
+settings: an explicit sort outranks keyword relevance. Setting it false leaves
+the engine's default relevance order ahead of an explicit sort.
 
 Only what a current consumer uses is modelled. Typo tolerance, tokenization,
 stop words, synonyms, faceting and pagination limits, vectors, replicas and

@@ -8,16 +8,7 @@ They are loosely based on the shapes used by ``content/search`` in
 from __future__ import annotations
 
 from openedx_search.registry import UseCaseRegistration
-from openedx_search.schema import (
-    Capabilities,
-    Distinct,
-    Field,
-    FieldType,
-    IndexSchema,
-    Ranking,
-    RankingRule,
-    Searchable,
-)
+from openedx_search.schema import Capabilities, Distinct, Field, FieldType, IndexSchema, Searchable
 
 __all__ = [
     "STUDIO_COURSE",
@@ -111,16 +102,7 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
             capabilities=Capabilities(filterable=True, facetable=True),
         ),
     ),
-    ranking=Ranking(
-        rules=(
-            RankingRule.SORT,
-            RankingRule.WORDS,
-            RankingRule.TYPO,
-            RankingRule.PROXIMITY,
-            RankingRule.ATTRIBUTE,
-            RankingRule.EXACTNESS,
-        ),
-    ),
+    sort_overrides_relevance=True,
     distinct=Distinct(attribute="usage_key"),
 )
 
@@ -261,16 +243,7 @@ STUDIO_LIBRARY_SCHEMA = IndexSchema(
         Field("published.content.child_usage_keys", FieldType.STRING, array=True),
         Field("published.content.child_display_names", FieldType.STRING, array=True),
     ),
-    ranking=Ranking(
-        rules=(
-            RankingRule.SORT,
-            RankingRule.WORDS,
-            RankingRule.TYPO,
-            RankingRule.PROXIMITY,
-            RankingRule.ATTRIBUTE,
-            RankingRule.EXACTNESS,
-        ),
-    ),
+    sort_overrides_relevance=True,
     distinct=Distinct(attribute="usage_key"),
 )
 
