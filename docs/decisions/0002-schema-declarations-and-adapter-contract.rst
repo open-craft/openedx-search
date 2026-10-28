@@ -55,8 +55,9 @@ adapter will bring nested fields and per-field flags.
 stored as numbers, because neither engine has a native date type.
 
 Adapters render ``IndexSchema`` in ``configure(schema)``. There is no second
-authored schema. A derived projection may exist internally, but must not become
-another type to maintain.
+authored schema. An adapter may derive an engine-specific projection internally,
+but it is not committed as code or edited by hand: the authored ``IndexSchema``
+is the only declaration to maintain.
 
 2. Registrations are engine-neutral
 ===================================
