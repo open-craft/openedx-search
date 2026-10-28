@@ -7,9 +7,9 @@ imported from application code, management commands and tests.
 
 Only the surface the current consumers use is modelled: document fields,
 searchable order, filterable, facetable and sortable capabilities, a sort
-precedence flag and a distinct attribute. Engine-specific settings such as typo
-tolerance, synonyms, tokenization, vectors and replicas are deliberately
-absent; add them when a consumer needs them.
+precedence flag. Engine-specific settings such as typo tolerance, synonyms,
+tokenization, vectors and replicas are deliberately absent; add them when a
+consumer needs them.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from enum import StrEnum
 
 __all__ = [
     "Capabilities",
-    "Distinct",
     "Field",
     "FieldType",
     "IndexSchema",
@@ -164,13 +163,6 @@ class Field:
 
 
 @dataclass(frozen=True)
-class Distinct:
-    """Deduplicate hits by a field value."""
-
-    attribute: str
-
-
-@dataclass(frozen=True)
 class IndexSchema:
     """
     A complete, engine-neutral index declaration.
@@ -178,10 +170,7 @@ class IndexSchema:
     ``name`` identifies the schema, not necessarily the index it is mounted
     under: a use-case registration carries the logical index name, which lets
     two registrations share one schema. ``sort_overrides_relevance`` controls
-    whether an explicit sort takes precedence over keyword relevance. A
-    ``distinct`` attribute must be declared and ``facetable``; Typesense's
-    ``group_by`` requires a facet field
-    (https://typesense.org/docs/30.2/api/search.html#group_by).
+    whether an explicit sort takes precedence over keyword relevance.
     """
 
     name: str
@@ -189,7 +178,6 @@ class IndexSchema:
     primary_key: str = "id"
     fields: tuple[Field, ...] = ()
     sort_overrides_relevance: bool = True
-    distinct: Distinct | None = None
 
     def __post_init__(self) -> None:
         """Validate cross-field invariants and freeze the field tuple."""
@@ -213,16 +201,6 @@ class IndexSchema:
             self.primary_key in by_name,
             f"primary key field {self.primary_key!r} is not declared",
         )
-
-        if self.distinct is not None:
-            _require(
-                self.distinct.attribute in by_name,
-                f"distinct attribute {self.distinct.attribute!r} is not declared",
-            )
-            _require(
-                by_name[self.distinct.attribute].capabilities.facetable,
-                f"distinct attribute {self.distinct.attribute!r} must be facetable",
-            )
 
     def field(self, name: str) -> Field:
         """

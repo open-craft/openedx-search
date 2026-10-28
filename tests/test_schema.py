@@ -2,7 +2,7 @@
 
 import pytest
 
-from openedx_search.schema import Capabilities, Distinct, Field, FieldType, IndexSchema, SchemaError, Searchable
+from openedx_search.schema import Capabilities, Field, FieldType, IndexSchema, SchemaError, Searchable
 from tests.fixtures import STUDIO_COURSE_SCHEMA, STUDIO_LIBRARY_SCHEMA
 
 
@@ -14,7 +14,6 @@ def test_course_schema_is_valid():
     assert STUDIO_COURSE_SCHEMA.field("tags.level3").capabilities.facetable is True
     assert STUDIO_COURSE_SCHEMA.field("content").additional_properties is True
     assert STUDIO_COURSE_SCHEMA.field("access_id").capabilities.filterable is True
-    assert STUDIO_COURSE_SCHEMA.distinct.attribute == "usage_key"
 
 
 def test_library_schema_is_valid():
@@ -26,7 +25,6 @@ def test_library_schema_is_valid():
     assert STUDIO_LIBRARY_SCHEMA.field("units.key").array is True
     assert STUDIO_LIBRARY_SCHEMA.field("content.child_usage_keys").array is True
     assert STUDIO_LIBRARY_SCHEMA.field("published.num_children").type is FieldType.INT32
-    assert STUDIO_LIBRARY_SCHEMA.distinct.attribute == "usage_key"
 
 
 def test_course_schema_omits_library_only_fields():
@@ -183,26 +181,6 @@ def test_bad_nested_path_is_rejected():
     """An empty path segment is invalid."""
     with pytest.raises(SchemaError, match="invalid field path"):
         Field("tags..level0")
-
-
-def test_distinct_attribute_must_be_declared():
-    """Distinct cannot point at an undeclared field."""
-    with pytest.raises(SchemaError, match="distinct attribute"):
-        IndexSchema(
-            name="bad_distinct",
-            fields=(Field("id"),),
-            distinct=Distinct(attribute="usage_key"),
-        )
-
-
-def test_distinct_attribute_must_be_facetable():
-    """Typesense's ``group_by`` needs a facet field."""
-    with pytest.raises(SchemaError, match="must be facetable"):
-        IndexSchema(
-            name="bad_distinct",
-            fields=(Field("id"), Field("usage_key", FieldType.STRING)),
-            distinct=Distinct(attribute="usage_key"),
-        )
 
 
 def test_searchable_order_must_be_positive():

@@ -8,7 +8,7 @@ They are loosely based on the shapes used by ``content/search`` in
 from __future__ import annotations
 
 from openedx_search.registry import UseCaseRegistration
-from openedx_search.schema import Capabilities, Distinct, Field, FieldType, IndexSchema, Searchable
+from openedx_search.schema import Capabilities, Field, FieldType, IndexSchema, Searchable
 
 __all__ = [
     "STUDIO_COURSE",
@@ -38,12 +38,7 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
     primary_key="id",
     fields=(
         Field("id", FieldType.STRING, required=True),
-        Field(
-            "usage_key",
-            FieldType.STRING,
-            required=True,
-            capabilities=Capabilities(filterable=True, facetable=True),
-        ),
+        Field("usage_key", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
         Field(
             "block_id",
             FieldType.STRING,
@@ -103,7 +98,6 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
         ),
     ),
     sort_overrides_relevance=True,
-    distinct=Distinct(attribute="usage_key"),
 )
 
 
@@ -115,12 +109,7 @@ STUDIO_LIBRARY_SCHEMA = IndexSchema(
     primary_key="id",
     fields=(
         Field("id", FieldType.STRING, required=True),
-        Field(
-            "usage_key",
-            FieldType.STRING,
-            required=True,
-            capabilities=Capabilities(filterable=True, facetable=True),
-        ),
+        Field("usage_key", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
         Field(
             "type",
             FieldType.STRING,
@@ -244,7 +233,6 @@ STUDIO_LIBRARY_SCHEMA = IndexSchema(
         Field("published.content.child_display_names", FieldType.STRING, array=True),
     ),
     sort_overrides_relevance=True,
-    distinct=Distinct(attribute="usage_key"),
 )
 
 STUDIO_COURSE = UseCaseRegistration(
