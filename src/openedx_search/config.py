@@ -1,8 +1,10 @@
 """
 Backend selection for openedx-search.
 
-Reads the deployment configuration described in ADR 0002. The library ships no
-default engine: an unconfigured deployment raises instead of picking one.
+A backend is the deployment's named engine connection; an adapter is the
+library's implementation for that engine. Reads the deployment configuration
+described in ADR 0002. The library ships no default engine: an unconfigured
+deployment raises instead of picking one.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ class BackendNotFound(ImproperlyConfigured):
 @dataclass(frozen=True)
 class BackendConfig:
     """
-    One resolved backend and its connection options.
+    One resolved backend: a named engine connection and its options.
 
     ``options`` is excluded from ``repr`` so credentials do not leak into logs.
     """

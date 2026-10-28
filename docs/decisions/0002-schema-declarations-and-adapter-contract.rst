@@ -21,8 +21,9 @@ Terminology
 
 An **engine** is Meilisearch, Typesense or Algolia. An **adapter** is this
 library's own implementation for one engine. The deployment's engine choice is
-still called a backend in the configuration (``OPENEDX_SEARCH_BACKENDS``), and
-ADR 0001 uses "backend" for what this ADR calls an adapter.
+still called a backend in the configuration (``OPENEDX_SEARCH_BACKENDS``): a
+backend is a named engine connection, not an adapter implementation. ADR 0001
+uses "backend" for what this ADR calls an adapter.
 
 Decision
 ********
