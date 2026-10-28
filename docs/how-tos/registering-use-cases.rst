@@ -1,8 +1,8 @@
 Registering a use case
 ######################
 
-The registration API is engine-neutral. A use case declares its logical index,
-schema and query shape; the deployment chooses the backend.
+The registration API is engine-neutral. A use case declares its logical index
+and schema; the deployment chooses the backend.
 
 Studio example
 **************

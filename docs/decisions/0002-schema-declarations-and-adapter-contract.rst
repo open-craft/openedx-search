@@ -85,6 +85,7 @@ The engine is a deployment choice, configured once per deployment:
 
     OPENEDX_SEARCH_BACKENDS = {
         "default": {"engine": "meilisearch", "url": "...", "api_key": "..."},
+        "typesense": {"engine": "typesense", "url": "...", "api_key": "..."},
     }
     OPENEDX_SEARCH_DEFAULT_BACKEND = "default"
     OPENEDX_SEARCH_USE_CASE_BACKENDS = {"forum": "typesense"}  # optional

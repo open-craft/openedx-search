@@ -107,10 +107,11 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     the live index and the target, confirms each source batch, and swaps the
     target in only after its writes are complete. A failure aborts the target.
 
-    A rebuild is not a consistent snapshot. A write that reaches the target
-    before the source writes the same document from an older read wins in the
-    target, and a delete can be undone if the source yields the deleted
-    document afterwards. This is the same window the current ``content/search``
+    A rebuild is not a consistent snapshot. If a write reaches the target
+    before the source writes the same document from an older read, the
+    source's older version wins in the target. A delete can be undone the same
+    way if the source yields the deleted document afterwards. This is the same
+    window the current ``content/search``
     rebuild has; callers that need a strict snapshot must stop writes for the
     duration of the rebuild.
     """
