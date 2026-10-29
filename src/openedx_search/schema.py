@@ -6,10 +6,9 @@ per use case. It is plain Python (no Django, no engine client), so it can be
 imported from application code, management commands and tests.
 
 Only the surface the current consumers use is modelled: document fields,
-searchable order, filterable, facetable and sortable capabilities, a sort
-precedence flag. Engine-specific settings such as typo tolerance, synonyms,
-tokenization, vectors and replicas are deliberately absent; add them when a
-consumer needs them.
+searchable order, filterable, facetable and sortable capabilities. Engine-specific
+settings such as typo tolerance, synonyms, tokenization, vectors and replicas are
+deliberately absent; add them when a consumer needs them.
 """
 
 from __future__ import annotations
@@ -207,23 +206,17 @@ class IndexSchema:
     ``name`` identifies the schema, not necessarily the index it is mounted
     under: a use-case registration carries the logical index name, which lets
     two registrations share one schema. The primary key is the required string
-    field ``id``. ``sort_overrides_relevance`` controls whether an explicit sort
-    takes precedence over keyword relevance.
+    field ``id``.
     """
 
     name: str
     version: int = 1
     fields: tuple[Field, ...] = ()
-    sort_overrides_relevance: bool = True
 
     def __post_init__(self) -> None:
         """Validate cross-field invariants and freeze the field tuple."""
         _require(bool(INDEX_NAME_PATTERN.match(self.name)), f"invalid schema name {self.name!r}")
         _require(self.version >= 1, "schema version must be >= 1")
-        _require(
-            isinstance(self.sort_overrides_relevance, bool),
-            "sort_overrides_relevance must be a bool",
-        )
 
         fields = tuple(self.fields)
         _require(bool(fields), "a schema needs at least one field")

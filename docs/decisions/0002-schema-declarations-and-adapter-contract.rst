@@ -40,16 +40,20 @@ There is one authored declaration, ``IndexSchema``:
   ``datetime``/``geopoint``/``object``/``unknown``, ``array``,
   ``additional_properties`` and the capabilities;
 * four capabilities: ``searchable`` (with ``order``), ``filterable``,
-  ``facetable`` and ``sortable``;
-* a ``sort_overrides_relevance`` flag.
+  ``facetable`` and ``sortable``.
 
 The primary key is the required string field ``id``, which both Meilisearch and
 Typesense use as the document identifier. A schema that omits ``id`` or declares
 it as anything other than a required, non-array string is rejected.
 
-``sort_overrides_relevance`` is true by default, matching the current Studio
-settings: an explicit sort outranks keyword relevance. Setting it false leaves
-the engine's default relevance order ahead of an explicit sort.
+Sort precedence is fixed, not declared: an explicit sort always outranks keyword
+relevance, and relevance applies only when the caller asks for it. Meilisearch
+encodes it in the index's ``rankingRules`` with ``sort`` first, which
+``reconcile`` applies. Typesense has no collection-level equivalent, so the
+request builder chooses between ``_text_match:desc`` and a field sort, per ADR
+0001's note that an explicit ``sort_by`` already outranks text matching. A
+relevance query sends no sort parameter; a field sort sends the field and, for
+Typesense, leaves ``_text_match:desc`` out.
 
 ``distinct`` is not modelled. The current consumer's ``distinctAttribute``
 setting is being dropped, not carried over, so no use case needs it.
@@ -199,7 +203,8 @@ the engine.
 
 ``reconcile`` creates the index if it is missing, compares the declared settings
 with the live index on every deploy, and applies engine-compatible changes
-without reindexing documents. ``begin_rebuild`` creates and configures its
+without reindexing documents. On Meilisearch that includes the ``rankingRules``
+with ``sort`` first. ``begin_rebuild`` creates and configures its
 target using the same renderer. A version bump or an incompatible settings
 change requires the explicit rebuild in section 4. The adapter owns the
 mechanics (Meilisearch PATCH and reindex, Typesense new collection plus alias).
@@ -282,7 +287,9 @@ positive ``expires_in`` lifetime as a ``timedelta``, and returns the scoped
 credential. It is derived locally (Meilisearch tenant tokens, Typesense scoped
 search keys), so Django is not in the search path. The adapter converts
 ``expires_in`` to the engine's absolute expiry (Typesense's Unix timestamp,
-Meilisearch's expiry date).
+Meilisearch's expiry date). For Typesense the key embeds ``query_by`` and
+``query_by_weights`` from the schema, and deliberately not ``sort_by``: embedded
+parameters cannot be overridden, and the sort is a per-query choice.
 
 ``upsert`` and ``delete`` take one bounded batch. ``documents`` is a sequence
 because a rebuild in progress submits the same batch twice. The API normalizes

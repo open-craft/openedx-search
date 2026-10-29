@@ -73,35 +73,6 @@ def test_field_defaults():
     assert entry.capabilities.sortable is False
 
 
-def test_sort_overrides_relevance_defaults_to_true():
-    """A schema that does not set the flag puts an explicit sort ahead of relevance."""
-    schema = IndexSchema(
-        name="default_sort_precedence",
-        fields=(Field("id", required=True),),
-    )
-    assert schema.sort_overrides_relevance is True
-
-
-def test_sort_overrides_relevance_can_be_disabled():
-    """A use case can keep relevance ahead of an explicit sort."""
-    schema = IndexSchema(
-        name="relevance_first",
-        fields=(Field("id", required=True),),
-        sort_overrides_relevance=False,
-    )
-    assert schema.sort_overrides_relevance is False
-
-
-def test_sort_overrides_relevance_must_be_bool():
-    """The flag is a boolean, not an engine-specific string."""
-    with pytest.raises(SchemaError, match="must be a bool"):
-        IndexSchema(
-            name="bad_flag",
-            fields=(Field("id", required=True),),
-            sort_overrides_relevance="yes",
-        )
-
-
 def test_searchable_field_must_be_string_or_object():
     """Typesense's ``query_by`` only searches string leaves."""
     with pytest.raises(SchemaError, match="must be a string or object"):

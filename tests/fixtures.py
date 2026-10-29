@@ -96,7 +96,6 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
             capabilities=Capabilities(filterable=True, facetable=True),
         ),
     ),
-    sort_overrides_relevance=True,
 )
 
 
@@ -230,7 +229,6 @@ STUDIO_LIBRARY_SCHEMA = IndexSchema(
         Field("published.content.child_usage_keys", FieldType.STRING, array=True),
         Field("published.content.child_display_names", FieldType.STRING, array=True),
     ),
-    sort_overrides_relevance=True,
 )
 
 STUDIO_COURSE = UseCaseRegistration(
