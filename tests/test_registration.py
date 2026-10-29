@@ -28,6 +28,46 @@ def test_duplicate_registration_is_rejected():
         register_use_case(STUDIO_COURSE)
 
 
+def test_duplicate_index_is_rejected():
+    """A logical index belongs to one use case."""
+    register_use_case(STUDIO_COURSE)
+    with pytest.raises(RegistrationError, match="index 'studio_content' is already used"):
+        register_use_case(
+            UseCaseRegistration(
+                use_case="other_course",
+                index="studio_content",
+                schema=STUDIO_COURSE_SCHEMA,
+            )
+        )
+
+
+def test_replace_cannot_take_another_use_case_index():
+    """``replace=True`` cannot take an index owned by another use case."""
+    register_use_case(STUDIO_COURSE)
+    register_use_case(STUDIO_LIBRARY)
+    replacement = UseCaseRegistration(
+        use_case="studio_library",
+        index="studio_content",
+        schema=STUDIO_LIBRARY_SCHEMA,
+    )
+    with pytest.raises(RegistrationError, match="already used by use case 'studio_course'"):
+        register_use_case(replacement, replace=True)
+
+
+def test_unregister_frees_index():
+    """Removing a registration makes its index available again."""
+    register_use_case(STUDIO_COURSE)
+    unregister_use_case("studio_course")
+    register_use_case(
+        UseCaseRegistration(
+            use_case="other_course",
+            index="studio_content",
+            schema=STUDIO_COURSE_SCHEMA,
+        )
+    )
+    assert get_registration("other_course").index == "studio_content"
+
+
 def test_replace_registration():
     """``replace=True`` allows a controlled re-registration."""
     register_use_case(STUDIO_COURSE)

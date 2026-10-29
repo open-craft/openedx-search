@@ -53,8 +53,9 @@ class UseCaseRegistration:
     """
     One search surface registered with the library.
 
-    ``index`` is a logical name. A backend maps it to its own namespace, such as
-    a Meilisearch index UID or a Typesense collection plus its alias.
+    ``index`` is a logical name. A use case owns it; another use case cannot
+    register the same index. A backend maps it to its own namespace, such as a
+    Meilisearch index UID or a Typesense collection plus its alias.
     """
 
     use_case: str
@@ -87,12 +88,20 @@ def register_use_case(
     Register a use case and return it.
 
     Raises ``UseCaseAlreadyRegistered`` when the use case is already present,
-    unless ``replace`` is true.
+    unless ``replace`` is true. Raises ``RegistrationError`` when the index is
+    already owned by a different use case.
     """
     _require(isinstance(registration, UseCaseRegistration), "registration must be a UseCaseRegistration")
     with _lock:
         if registration.use_case in _registrations and not replace:
             raise UseCaseAlreadyRegistered(f"use case {registration.use_case!r} is already registered")
+        for existing in _registrations.values():
+            if existing.use_case == registration.use_case:
+                continue
+            if existing.index == registration.index:
+                raise RegistrationError(
+                    f"index {registration.index!r} is already used by use case {existing.use_case!r}"
+                )
         _registrations[registration.use_case] = registration
     return registration
 

@@ -83,6 +83,10 @@ A "registration" declares one use case, and specifies the associated logical ind
 Meilisearch index UID, or a Typesense collection plus the alias used for
 rebuilds.
 
+One use case owns a logical index. Two use cases cannot share an index: a
+rebuild of one builds a target from only its own documents and would drop the
+other's on swap.
+
 The engine is a deployment choice, configured once per deployment:
 
 ::
