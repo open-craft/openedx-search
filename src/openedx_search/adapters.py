@@ -12,6 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, TypeAlias
 
 from .config import BackendConfig
@@ -21,6 +22,7 @@ from .schema import FIELD_NAME_PATTERN, IndexSchema
 __all__ = [
     "Adapter",
     "AdapterError",
+    "CredentialScope",
     "Document",
     "DocumentBatch",
     "FilterExpression",
@@ -74,6 +76,17 @@ class FilterTerm:
 
 
 FilterExpression: TypeAlias = tuple[FilterTerm, ...]
+
+
+@dataclass(frozen=True)
+class CredentialScope:
+    """Tenant filters for a scoped frontend credential."""
+
+    filters: FilterExpression = ()
+
+    def __post_init__(self) -> None:
+        """Freeze the filter tuple."""
+        object.__setattr__(self, "filters", tuple(self.filters))
 
 
 @dataclass(frozen=True)
@@ -180,5 +193,5 @@ class Adapter(ABC):
         """Run one search. The query model is specified separately."""
 
     @abstractmethod
-    def mint_credential(self, scope: Mapping[str, Any], expires: int) -> str:
+    def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> str:
         """Mint a scoped, expiring credential."""

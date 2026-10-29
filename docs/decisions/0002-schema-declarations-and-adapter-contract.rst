@@ -117,7 +117,7 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
     delete(primary_keys=None, *, filter=None, target=None) -> WriteReceipt
     check_write(receipt)                                   -> WriteReceipt
     search(query)                                          -> SearchResult
-    mint_credential(scope, expires)                        -> str
+    mint_credential(scope, expires_in)                     -> str
 
 Each adapter implements ``validate_schema(schema)``. The shared model already
 rejects declarations that either implemented engine cannot represent: a
@@ -200,7 +200,7 @@ registration and backend and exposes these functions:
 ::
 
     search(use_case, query)                             -> SearchResult
-    mint_credential(use_case, scope, expires)           -> str
+    mint_credential(use_case, scope, expires_in)        -> str
     upsert(use_case, documents)                         -> WriteReceipt
     delete(use_case, primary_keys=None, *, filter=None) -> WriteReceipt
     check_write(use_case, receipt)                      -> WriteReceipt
@@ -240,9 +240,12 @@ Decision 7. Query terms are per request, not part of the schema: callers build
 filter terms and adapters render them, and raw filter strings do not cross the
 API.
 
-``mint_credential`` returns that scoped, expiring credential, derived locally
-(Meilisearch tenant tokens, Typesense scoped search keys), so Django is not in
-the search path.
+``mint_credential`` takes a ``CredentialScope`` of tenant filters and a
+positive ``expires_in`` lifetime as a ``timedelta``, and returns the scoped
+credential. It is derived locally (Meilisearch tenant tokens, Typesense scoped
+search keys), so Django is not in the search path. The adapter converts
+``expires_in`` to the engine's absolute expiry (Typesense's Unix timestamp,
+Meilisearch's expiry date).
 
 ``upsert`` and ``delete`` take one bounded batch. ``documents`` is a sequence
 because a rebuild in progress submits the same batch twice. The API normalizes

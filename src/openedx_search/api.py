@@ -11,13 +11,23 @@ implementations land with the engine adapters.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, TypeAlias
 
-from .adapters import DocumentBatch, FilterExpression, PrimaryKey, RebuildTarget, SearchResult, WriteReceipt
+from .adapters import (
+    CredentialScope,
+    DocumentBatch,
+    FilterExpression,
+    PrimaryKey,
+    RebuildTarget,
+    SearchResult,
+    WriteReceipt,
+)
 
 __all__ = [
+    "CredentialScope",
     "DocumentSource",
     "RebuildInProgress",
     "RebuildResult",
@@ -128,11 +138,18 @@ def search(use_case: str, query: Any) -> SearchResult:
     raise NotImplementedError("search is implemented with the engine adapters")
 
 
-def mint_credential(use_case: str, scope: Mapping[str, Any], expires: int) -> str:
+def mint_credential(  # pylint: disable=unused-argument
+    use_case: str, scope: CredentialScope, expires_in: timedelta
+) -> str:
     """
     Mint a scoped, expiring credential for direct frontend queries.
 
-    The credential is derived locally (Meilisearch tenant tokens, Typesense
-    scoped search keys); no request is proxied through Django.
+    ``scope`` is a :class:`CredentialScope` carrying the tenant filters.
+    ``expires_in`` is the positive lifetime of the credential. The adapter
+    converts it to the engine's absolute expiry (Typesense's Unix timestamp,
+    Meilisearch's expiry date). The credential is derived locally; no request is
+    proxied through Django.
     """
+    if expires_in <= timedelta(0):
+        raise ValueError("expires_in must be positive")
     raise NotImplementedError("mint_credential is implemented with the engine adapters")
