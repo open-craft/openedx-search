@@ -99,7 +99,12 @@ class WriteReceipt:
 
 @dataclass(frozen=True)
 class RebuildTarget:
-    """A rebuild target created by ``begin_rebuild``."""
+    """
+    A rebuild target created by ``begin_rebuild``.
+
+    The adapter derives the target name deterministically from the index and
+    schema version, so the next rebuild can clear a leftover target.
+    """
 
     index: str
     version: int
@@ -158,7 +163,11 @@ class Adapter(ABC):
 
     @abstractmethod
     def begin_rebuild(self) -> RebuildTarget:
-        """Create a rebuild target for ``self.schema`` and return its handle."""
+        """
+        Create or reuse the deterministic target for ``self.schema``.
+
+        A leftover target with the same name is deleted or reused.
+        """
 
     @abstractmethod
     def commit_rebuild(self, target: RebuildTarget) -> None:

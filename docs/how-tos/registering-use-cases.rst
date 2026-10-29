@@ -63,5 +63,6 @@ Registrations are consumer-owned. Call ``register_use_case`` from the consumer's
             register_use_case(STUDIO_LIBRARY, replace=True)
 
 ``replace=True`` makes the hook safe under development reloads and repeated
-``ready()`` calls in tests. Each process loads its own in-memory registry; there
-is no shared or persisted state.
+``ready()`` calls in tests. Each process loads its own in-memory registry; the
+registry has no shared or persisted state. The rebuild target is the exception:
+it is stored in Redis so every writer process sees it.

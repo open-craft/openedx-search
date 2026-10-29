@@ -127,9 +127,14 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     materializing the corpus. Paging, resumability and progress reporting
     belong to the source.
 
-    The library creates the target, records it so concurrent writes reach both
-    the live index and the target, confirms each source batch, and swaps the
-    target in only after its writes are complete. A failure aborts the target.
+    The library creates the target, records it in the shared Redis cache with a
+    lease so concurrent writes reach both the live index and the target, confirms
+    each source batch, and swaps the target in only after its writes are complete.
+    The target name is deterministic, so a leftover target from a crashed worker
+    is cleared by the next rebuild. The worker checks its lease before
+    committing; an expired or missing lease aborts the target. A process ignores
+    or aborts a target whose version does not match its local registration. A
+    failure aborts the target.
 
     A rebuild is not a consistent snapshot. If a write reaches the target
     before the source writes the same document from an older read, the

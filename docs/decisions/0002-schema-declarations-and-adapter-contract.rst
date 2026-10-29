@@ -260,13 +260,25 @@ target.
 backoff (section 3).
 
 ``rebuild`` resolves the registration, calls ``begin_rebuild``, records the
-target in shared state, and iterates ``document_source``. The source is a
-callable returning an iterator of batches, invoked in the rebuild worker, so a
-consumer can page through its database without materializing the corpus. Each
-batch goes to the target and is confirmed with ``check_write`` before the next
-is requested. While the target is recorded, ``upsert`` and ``delete`` submit to
-both the live index and the target. ``commit_rebuild`` swaps the target in and
-deletes the old target; any failure aborts it.
+target in the shared Redis cache, and iterates ``document_source``. The target
+name is deterministic for an index and schema version, so ``begin_rebuild`` can
+delete or reuse a leftover target from a crashed worker. The cache key is per use
+case and holds the ``RebuildTarget`` with a lease. The rebuild refreshes the
+lease as it processes batches and checks it before ``commit_rebuild``; if the
+lease is gone or expired, it aborts instead of swapping a target that may have
+missed concurrent writes. A writer treats an expired lease as no active rebuild
+and clears the stale key. A process also ignores or aborts a target whose
+``RebuildTarget.version`` does not match its local registration, so a rolling
+deploy cannot dual-write across schema versions. ``commit_rebuild`` and
+``abort_rebuild`` clear it. The cache must be Redis, so every writer process
+reads the same target; the process-local cache is not sufficient.
+
+The source is a callable returning an iterator of batches, invoked in the rebuild
+worker, so a consumer can page through its database without materializing the
+corpus. Each batch goes to the target and is confirmed with ``check_write``
+before the next is requested. While the target is recorded, ``upsert`` and
+``delete`` submit to both the live index and the target. ``commit_rebuild`` swaps
+the target in and deletes the old target; any failure aborts it.
 
 A rebuild is not a consistent snapshot. The document source reads from the
 consumer's database while writes continue. If a write reaches the target before
