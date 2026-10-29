@@ -128,7 +128,9 @@ class Adapter(ABC):
     One engine implementation for a registered use case.
 
     A factory receives the registration and the resolved backend, so the
-    adapter knows its logical index, schema and connection options.
+    adapter knows its logical index, schema and connection options. Lifecycle
+    methods use ``self.schema``; the registration is the single source of the
+    declared schema.
     """
 
     def __init__(self, registration: UseCaseRegistration, backend: BackendConfig) -> None:
@@ -147,20 +149,16 @@ class Adapter(ABC):
         return self.registration.schema
 
     @abstractmethod
-    def validate_schema(self, schema: IndexSchema) -> None:
-        """Raise ``UnsupportedSchema`` when the adapter cannot represent ``schema``."""
+    def validate_schema(self) -> None:
+        """Raise ``UnsupportedSchema`` when the adapter cannot represent ``self.schema``."""
 
     @abstractmethod
-    def configure(self, schema: IndexSchema) -> None:
-        """Render and apply the index settings for ``schema``."""
+    def reconcile(self) -> ReconcileResult:
+        """Create the index if needed and apply drift-free settings from ``self.schema``."""
 
     @abstractmethod
-    def reconcile(self, schema: IndexSchema) -> ReconcileResult:
-        """Create the index if needed and apply drift-free settings."""
-
-    @abstractmethod
-    def begin_rebuild(self, schema: IndexSchema) -> RebuildTarget:
-        """Create a rebuild target for ``schema`` and return its handle."""
+    def begin_rebuild(self) -> RebuildTarget:
+        """Create a rebuild target for ``self.schema`` and return its handle."""
 
     @abstractmethod
     def commit_rebuild(self, target: RebuildTarget) -> None:

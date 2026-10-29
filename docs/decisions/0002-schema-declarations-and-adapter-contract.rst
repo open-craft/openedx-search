@@ -61,10 +61,10 @@ adapter will bring nested fields and per-field flags.
 ``datetime`` is a logical type: values are POSIX timestamps in seconds (UTC),
 stored as numbers, because neither engine has a native date type.
 
-Adapters render ``IndexSchema`` in ``configure(schema)``. There is no second
-authored schema. An adapter may derive an engine-specific projection internally,
-but it is not committed as code or edited by hand: the authored ``IndexSchema``
-is the only declaration to maintain.
+Adapters render ``IndexSchema`` when they create or reconcile an index. There is
+no second authored schema. A derived projection may exist internally, but it is
+not committed as code or edited by hand: the authored ``IndexSchema`` is the
+only declaration to maintain.
 
 2. Registrations are engine-neutral
 ===================================
@@ -111,10 +111,9 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
 
 ::
 
-    validate_schema(schema)                                -> None or raises UnsupportedSchema
-    configure(schema)                                      -> renders and applies settings
-    reconcile(schema)                                      -> ReconcileResult
-    begin_rebuild(schema)                                  -> RebuildTarget
+    validate_schema()                                      -> None or raises UnsupportedSchema
+    reconcile()                                            -> ReconcileResult
+    begin_rebuild()                                        -> RebuildTarget
     commit_rebuild(target)                                 -> None
     abort_rebuild(target)                                  -> None
     upsert(documents, target=None)                         -> WriteReceipt
@@ -123,7 +122,7 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
     search(query)                                          -> SearchResult
     mint_credential(scope, expires_in)                     -> str
 
-Each adapter implements ``validate_schema(schema)``. The shared model already
+Each adapter implements ``validate_schema()``. The shared model already
 rejects declarations that either implemented engine cannot represent: a
 ``searchable`` field must be a string or an object whose leaves are strings,
 and an array field cannot be ``sortable``. ``validate_schema`` is therefore a
@@ -137,7 +136,7 @@ For the two adapters that will be implemented the method will be a no-op:
 
 .. code-block:: python
 
-    def validate_schema(self, schema):
+    def validate_schema(self):
         pass
 
 An adapter with a narrower feature set makes the check explicit. For example, an
@@ -145,10 +144,10 @@ adapter that cannot represent ``geopoint`` fields:
 
 .. code-block:: python
 
-    def validate_schema(self, schema):
+    def validate_schema(self):
         missing = {
             field.name
-            for field in schema.fields
+            for field in self.schema.fields
             if field.type is FieldType.GEOPOINT
         }
         if missing:
@@ -165,13 +164,13 @@ Fields are optional by default. A ``required`` field must be present and
 non-null; Typesense renders it as ``optional: false``, and the shared validator
 rejects documents that omit it.
 
-``configure`` renders and applies the declared settings. ``reconcile`` compares
-the declared settings with the live index on every deploy and applies
-engine-compatible changes without reindexing documents. A version bump or an
-incompatible settings change requires the explicit rebuild in section 4. The
-adapter owns the mechanics (Meilisearch PATCH and reindex, Typesense new
-collection plus alias). Lossy edges are reported by ``validate_schema`` or
-``configure``, never dropped.
+``reconcile`` creates the index if it is missing, compares the declared settings
+with the live index on every deploy, and applies engine-compatible changes
+without reindexing documents. ``begin_rebuild`` creates and configures its
+target using the same renderer. A version bump or an incompatible settings
+change requires the explicit rebuild in section 4. The adapter owns the
+mechanics (Meilisearch PATCH and reindex, Typesense new collection plus alias).
+Lossy edges are reported by ``validate_schema`` or ``reconcile``, never dropped.
 
 ``upsert`` and ``delete`` submit one bounded batch and return a
 ``WriteReceipt``. ``upsert`` takes one bounded batch, a sequence of documents.
@@ -187,10 +186,10 @@ sleeps or retries; scheduling and backoff belong to the indexing worker, per
 ADR 0001 Decision 9. A synchronous engine returns an already-complete receipt
 without a request.
 
-``begin_rebuild(schema)`` creates the target and returns a ``RebuildTarget``.
-``commit_rebuild(target)`` waits for the target's writes, swaps it into place
-and deletes the old target. ``abort_rebuild(target)`` discards it. The library
-orchestrates these primitives in section 4.
+``begin_rebuild()`` creates the target from ``self.schema`` and returns a
+``RebuildTarget``. ``commit_rebuild(target)`` waits for the target's writes,
+swaps it into place and deletes the old target. ``abort_rebuild(target)``
+discards it. The library orchestrates these primitives in section 4.
 
 ``search`` and ``mint_credential`` are the read-side adapter methods; section 4
 describes their consumer contract.
