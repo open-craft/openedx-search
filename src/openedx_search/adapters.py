@@ -38,7 +38,7 @@ __all__ = [
 
 Document: TypeAlias = Mapping[str, Any]
 DocumentBatch: TypeAlias = Sequence[Document]
-PrimaryKey: TypeAlias = str | int
+PrimaryKey: TypeAlias = str
 
 
 class AdapterError(RuntimeError):

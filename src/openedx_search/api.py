@@ -70,6 +70,20 @@ def upsert(use_case: str, documents: DocumentBatch) -> WriteReceipt:
     raise NotImplementedError("upsert is implemented with the engine adapters")
 
 
+def _normalize_primary_keys(
+    primary_keys: PrimaryKey | Sequence[PrimaryKey] | None,
+) -> tuple[PrimaryKey, ...] | None:
+    """Normalize one primary key or a sequence into a non-empty tuple."""
+    if primary_keys is None:
+        return None
+    if isinstance(primary_keys, str):
+        return (primary_keys,)
+    keys = tuple(primary_keys)
+    if not keys:
+        raise ValueError("primary_keys must not be empty")
+    return keys
+
+
 def delete(
     use_case: str,
     primary_keys: PrimaryKey | Sequence[PrimaryKey] | None = None,
@@ -80,8 +94,9 @@ def delete(
     Submit a delete by primary key or by an abstract filter expression.
 
     ``primary_keys`` are values of the required string ``id`` field: one value
-    for a single document, a sequence for a batch. ``filter`` is the same
-    abstract filter expression used by search, never a raw engine string.
+    for a single document, a sequence for a batch. A string is treated as one
+    key, not as a sequence of characters. ``filter`` is the same abstract
+    filter expression used by search, never a raw engine string.
 
     Exactly one of ``primary_keys`` and ``filter`` is required, and neither may
     be empty, so a bare call cannot empty an index. During a rebuild the delete
