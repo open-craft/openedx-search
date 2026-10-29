@@ -155,7 +155,12 @@ class Adapter(ABC):
 
     @abstractmethod
     def validate_schema(self) -> None:
-        """Raise ``UnsupportedSchema`` when the adapter cannot represent ``self.schema``."""
+        """
+        Raise ``UnsupportedSchema`` when the adapter cannot represent ``self.schema``.
+
+        The Django system check calls this for each registration; registration
+        itself never resolves an adapter.
+        """
 
     @abstractmethod
     def reconcile(self) -> ReconcileResult:

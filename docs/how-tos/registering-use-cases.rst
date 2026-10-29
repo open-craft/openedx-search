@@ -66,3 +66,8 @@ Registrations are consumer-owned. Call ``register_use_case`` from the consumer's
 ``ready()`` calls in tests. Each process loads its own in-memory registry; the
 registry has no shared or persisted state. The rebuild target is the exception:
 it is stored in Redis so every writer process sees it.
+
+Registering validates the declaration only; it does not resolve a backend.
+Schema compatibility with the configured adapter is checked by a Django system
+check when ``manage.py check`` runs, and by the deploy-time commands that run
+checks (``migrate`` among them), not by ``register_use_case``.

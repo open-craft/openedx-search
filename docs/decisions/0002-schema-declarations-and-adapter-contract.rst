@@ -14,7 +14,9 @@ search library for the platform, with use cases declaring a document schema,
 index settings and a query shape, and Typesense and Meilisearch implemented.
 This ADR settles what that leaves open: the concrete declaration, how adapters
 render it, and how a use case selects an engine. It does not revisit the engine
-scope or the registration model from ADR 0001.
+scope from ADR 0001. It does refine the registration shape from ADR 0001
+Decision 1: index settings are derived from the declared schema, and query
+shape belongs to the call rather than to the registration.
 
 Terminology
 ***********
@@ -122,17 +124,26 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
     search(query)                                          -> SearchResult
     mint_credential(scope, expires_in)                     -> str
 
-Each adapter implements ``validate_schema()``. The shared model already
-rejects declarations that either implemented engine cannot represent: a
-``searchable`` field must be a string or an object whose leaves are strings,
-and an array field cannot be ``sortable``. ``validate_schema`` is therefore a
-no-op for the Meilisearch and Typesense adapters once they are implemented. It
-is the hook for an adapter with a narrower feature set, which raises
-``UnsupportedSchema`` naming the parts it cannot represent. It runs at
-registration and before settings are applied; a use case that needs an
-unsupported capability fails there, not silently.
+A schema passes two checks, at different times. The first needs no engine and no
+settings: the neutral model rejects declarations that no supported engine can
+represent, and it does so when ``IndexSchema`` is constructed, before any
+registration exists. A ``searchable`` field must be a string or an object whose
+leaves are strings, and an array field cannot be ``sortable``.
 
-For the two adapters that will be implemented the method will be a no-op:
+The second is ``Adapter.validate_schema()``, which covers what the first cannot:
+capabilities the neutral model allows but this particular adapter cannot
+represent. Every adapter implements it. It is a no-op for Meilisearch and
+Typesense, and the hook for an adapter with a narrower feature set, which raises
+``UnsupportedSchema`` naming the parts it cannot represent.
+
+``register_use_case()`` does not call ``validate_schema()``; it validates the
+registration object and its index ownership only, so the registry never reads
+settings or imports an adapter. A Django system check resolves each
+registration's adapter and calls ``validate_schema()``, so an unsupported
+schema fails ``manage.py check`` and the deploy-time commands that run checks
+(``migrate`` among them), not silently at query time and not at registration.
+
+For Meilisearch and Typesense:
 
 .. code-block:: python
 
@@ -296,8 +307,7 @@ Consequences
    declaration, not another engine integration.
 2. Adapters stay small: capabilities, a renderer, document mapping and
    transport.
-3. Unsupported capabilities fail at registration or startup, before data is
-   indexed.
+3. Unsupported capabilities fail during deployment, before data is indexed.
 4. Adding Algolia remains additive: capability flags plus a renderer.
 5. A rebuild is not point-in-time consistent: a document changed between the
    source's read and its write can be indexed in its older form in the target.
