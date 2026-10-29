@@ -77,7 +77,7 @@ def test_sort_overrides_relevance_defaults_to_true():
     """A schema that does not set the flag puts an explicit sort ahead of relevance."""
     schema = IndexSchema(
         name="default_sort_precedence",
-        fields=(Field("id"),),
+        fields=(Field("id", required=True),),
     )
     assert schema.sort_overrides_relevance is True
 
@@ -86,7 +86,7 @@ def test_sort_overrides_relevance_can_be_disabled():
     """A use case can keep relevance ahead of an explicit sort."""
     schema = IndexSchema(
         name="relevance_first",
-        fields=(Field("id"),),
+        fields=(Field("id", required=True),),
         sort_overrides_relevance=False,
     )
     assert schema.sort_overrides_relevance is False
@@ -97,7 +97,7 @@ def test_sort_overrides_relevance_must_be_bool():
     with pytest.raises(SchemaError, match="must be a bool"):
         IndexSchema(
             name="bad_flag",
-            fields=(Field("id"),),
+            fields=(Field("id", required=True),),
             sort_overrides_relevance="yes",
         )
 
@@ -142,10 +142,31 @@ def test_duplicate_field_names_are_rejected():
         IndexSchema(name="duplicate", fields=(Field("id"), Field("id")))
 
 
-def test_primary_key_must_be_declared():
-    """The primary key has to exist in the field list."""
-    with pytest.raises(SchemaError, match="primary key field"):
-        IndexSchema(name="missing_pk", fields=(Field("other"),))
+def test_id_field_must_be_declared():
+    """A schema must declare the required string id."""
+    with pytest.raises(SchemaError, match="required string field 'id'"):
+        IndexSchema(name="missing_id", fields=(Field("other", required=True),))
+
+
+def test_id_field_must_be_string():
+    """Typesense and Meilisearch both use a string id."""
+    with pytest.raises(SchemaError, match="field 'id' must be a string"):
+        IndexSchema(name="bad_id", fields=(Field("id", FieldType.INT32, required=True),))
+
+
+def test_id_field_must_be_required():
+    """The document id cannot be omitted."""
+    with pytest.raises(SchemaError, match="field 'id' must be required"):
+        IndexSchema(name="bad_id", fields=(Field("id", FieldType.STRING),))
+
+
+def test_id_field_cannot_be_an_array():
+    """The document id is a single string."""
+    with pytest.raises(SchemaError, match="field 'id' cannot be an array"):
+        IndexSchema(
+            name="bad_id",
+            fields=(Field("id", FieldType.STRING, required=True, array=True),),
+        )
 
 
 def test_object_field_cannot_be_sortable():

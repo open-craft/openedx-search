@@ -69,10 +69,9 @@ def delete(
     """
     Submit a delete by primary key or by an abstract filter expression.
 
-    ``primary_keys`` are values of the index's declared ``primary_key`` field:
-    one value for a single document, a sequence for a batch. Their type follows
-    the primary key field's type. ``filter`` is the same abstract filter
-    expression used by search, never a raw engine string.
+    ``primary_keys`` are values of the required string ``id`` field: one value
+    for a single document, a sequence for a batch. ``filter`` is the same
+    abstract filter expression used by search, never a raw engine string.
 
     Exactly one of ``primary_keys`` and ``filter`` is required, and neither may
     be empty, so a bare call cannot empty an index. During a rebuild the delete

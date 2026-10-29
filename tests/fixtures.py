@@ -35,7 +35,6 @@ def _tag(name: str, searchable: Searchable) -> Field:
 STUDIO_COURSE_SCHEMA = IndexSchema(
     name="studio_course",
     version=1,
-    primary_key="id",
     fields=(
         Field("id", FieldType.STRING, required=True),
         Field("usage_key", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
@@ -106,7 +105,6 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
 STUDIO_LIBRARY_SCHEMA = IndexSchema(
     name="studio_library",
     version=1,
-    primary_key="id",
     fields=(
         Field("id", FieldType.STRING, required=True),
         Field("usage_key", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),

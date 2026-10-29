@@ -162,6 +162,15 @@ class Field:
             _require(not self.array, f"array field {self.name!r} cannot be sortable")
 
 
+def _validate_id(by_name: dict[str, Field]) -> None:
+    """Require the fixed string id field."""
+    id_field = by_name.get("id")
+    _require(id_field is not None, "a schema must declare the required string field 'id'")
+    _require(id_field.type is FieldType.STRING, "field 'id' must be a string")
+    _require(id_field.required, "field 'id' must be required")
+    _require(not id_field.array, "field 'id' cannot be an array")
+
+
 @dataclass(frozen=True)
 class IndexSchema:
     """
@@ -169,13 +178,13 @@ class IndexSchema:
 
     ``name`` identifies the schema, not necessarily the index it is mounted
     under: a use-case registration carries the logical index name, which lets
-    two registrations share one schema. ``sort_overrides_relevance`` controls
-    whether an explicit sort takes precedence over keyword relevance.
+    two registrations share one schema. The primary key is the required string
+    field ``id``. ``sort_overrides_relevance`` controls whether an explicit sort
+    takes precedence over keyword relevance.
     """
 
     name: str
     version: int = 1
-    primary_key: str = "id"
     fields: tuple[Field, ...] = ()
     sort_overrides_relevance: bool = True
 
@@ -197,10 +206,7 @@ class IndexSchema:
             _require(entry.name not in by_name, f"duplicate field name {entry.name!r}")
             by_name[entry.name] = entry
 
-        _require(
-            self.primary_key in by_name,
-            f"primary key field {self.primary_key!r} is not declared",
-        )
+        _validate_id(by_name)
 
     def field(self, name: str) -> Field:
         """

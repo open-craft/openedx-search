@@ -33,13 +33,17 @@ Decision
 
 There is one authored declaration, ``IndexSchema``:
 
-* identity: ``name``, ``primary_key`` and ``version``;
+* identity: ``name`` and ``version``;
 * ``fields``: a name, one of ``string``/``int32``/``int64``/``float``/``bool``/
   ``datetime``/``geopoint``/``object``/``unknown``, ``array``,
   ``additional_properties`` and the capabilities;
 * four capabilities: ``searchable`` (with ``order``), ``filterable``,
   ``facetable`` and ``sortable``;
 * a ``sort_overrides_relevance`` flag.
+
+The primary key is the required string field ``id``, which both Meilisearch and
+Typesense use as the document identifier. A schema that omits ``id`` or declares
+it as anything other than a required, non-array string is rejected.
 
 ``sort_overrides_relevance`` is true by default, matching the current Studio
 settings: an explicit sort outranks keyword relevance. Setting it false leaves
@@ -167,12 +171,11 @@ collection plus alias). Lossy edges are reported by ``validate_schema`` or
 
 ``upsert`` and ``delete`` submit one bounded batch and return a
 ``WriteReceipt``. ``upsert`` takes one bounded batch, a sequence of documents.
-``delete`` takes
-``primary_keys`` values of the declared primary key field (one value or a
-sequence) or the same abstract filter expression ``search`` accepts. Exactly one
-of ``primary_keys`` and ``filter`` is required, and neither may be empty, so a
-bare ``delete()`` cannot empty an index. Both methods accept an optional
-``target`` so the library can submit to a rebuild target.
+``delete`` takes ``primary_keys`` values of the required string ``id`` field
+(one value or a sequence) or the same abstract filter expression ``search``
+accepts. Exactly one of ``primary_keys`` and ``filter`` is required, and
+neither may be empty, so a bare ``delete()`` cannot empty an index. Both methods
+accept an optional ``target`` so the library can submit to a rebuild target.
 
 ``check_write(receipt)`` performs one status check and returns an updated
 receipt, raising ``WriteFailed`` when the engine reports a failure. It never
