@@ -33,6 +33,7 @@ Deployments choose the engine in configuration, not in the registration:
 
     OPENEDX_SEARCH_BACKENDS = {
         "default": {"engine": "meilisearch", "url": "http://...", "api_key": "..."},
+        "typesense": {"engine": "typesense", "url": "http://...", "api_key": "..."},
     }
     OPENEDX_SEARCH_DEFAULT_BACKEND = "default"
     OPENEDX_SEARCH_USE_CASE_BACKENDS = {"forum": "typesense"}  # optional
