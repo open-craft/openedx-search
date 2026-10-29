@@ -167,13 +167,35 @@ adapter that cannot represent ``geopoint`` fields:
             )
 
 Document validation is a separate, library-level step. Before a document is
-handed to any adapter, the library checks it against the schema: field types,
-arrays, required fields and free-form objects. Adapters do not reimplement this,
-so every engine rejects the same bad document for the same reason.
+handed to an adapter, the library validates it against the schema, so every
+engine accepts and rejects the same documents. The engines disagree on their
+own: Meilisearch ignores fields it does not know and accepts a document that
+omits a field, while Typesense drops undeclared fields and rejects a document
+that omits a field it rendered as ``optional: false``. The library relies on
+neither behavior.
 
-Fields are optional by default. A ``required`` field must be present and
-non-null; Typesense renders it as ``optional: false``, and the shared validator
-rejects documents that omit it.
+A document is valid when:
+
+* every ``required`` field is present, including the ``id`` the schema requires;
+* every declared field that is present has the declared type and shape, and an
+  array field is an array of that type;
+* a ``datetime`` value is POSIX seconds, which is how the engines store it;
+* a nested object follows the same rules for its declared leaves, except under
+  ``additional_properties``, where any key is accepted;
+* every field in the document is declared in the schema.
+
+``null`` is not a value. A consumer that has nothing to store omits the field
+instead of sending ``null``, so a null is an error for required and optional
+fields alike.
+
+A violation raises ``DocumentError`` naming the document's ``id``, the field
+and the reason. Validation runs before the batch reaches the adapter, so one
+invalid document fails the whole ``upsert`` call before anything is written,
+and adapters never see an invalid document.
+
+Fields are optional by default. ``required`` is what the schema declares and
+what Typesense renders as ``optional: false``; the validator enforces it, not
+the engine.
 
 ``reconcile`` creates the index if it is missing, compares the declared settings
 with the live index on every deploy, and applies engine-compatible changes
@@ -237,7 +259,8 @@ library adds only the behaviour below.
      - none
    * - ``upsert``
      - ``upsert``
-     - one bounded batch (a sequence); dual-write during rebuild
+     - one bounded batch (a sequence); validate every document; dual-write
+       during rebuild
    * - ``delete``
      - ``delete``
      - normalize ``primary_keys``; exactly one form; dual-write
