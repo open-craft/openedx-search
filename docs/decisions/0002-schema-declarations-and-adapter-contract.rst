@@ -299,6 +299,31 @@ mirrors ADR 0001's wording, but field capabilities drive settings in every
 engine (``facetable`` becomes ``facet: true``, ``sortable`` becomes a per-field
 sort), so the two must stay in sync.
 
+**Permissive searchable objects with adapter expansion.** A searchable object
+could allow non-string leaves and have the adapter expand it into its string
+leaves:
+
+.. code-block:: python
+
+    Field("tags", FieldType.OBJECT, capabilities=Capabilities(searchable=True))
+    Field("tags.count", FieldType.INT64, capabilities=Capabilities(filterable=True))
+    Field("tags.taxonomy", FieldType.STRING)
+
+Meilisearch would render ``searchableAttributes: ["tags.taxonomy"]`` and
+Typesense ``query_by=tags.taxonomy``. Without that expansion, Meilisearch
+includes ``tags.count`` when ``tags`` is searchable, while Typesense ignores it.
+Rejected because parity would depend on every adapter applying the expansion,
+and free-form ``additional_properties`` objects cannot be expanded.
+
+The strict rule instead requires a searchable object to contain only string
+leaves. A mixed object marks its string children searchable:
+
+.. code-block:: python
+
+    Field("tags", FieldType.OBJECT)
+    Field("tags.count", FieldType.INT64, capabilities=Capabilities(filterable=True))
+    Field("tags.taxonomy", FieldType.STRING, capabilities=Capabilities(searchable=True))
+
 References
 **********
 

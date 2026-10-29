@@ -119,6 +119,95 @@ def test_searchable_field_must_be_string_or_object():
     assert content.capabilities.searchable is True
 
 
+def test_searchable_object_leaves_must_be_strings():
+    """An object field can only be searched through its string leaves."""
+    with pytest.raises(SchemaError, match="non-string leaf"):
+        IndexSchema(
+            name="bad_searchable_object",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("meta", FieldType.OBJECT, capabilities=Capabilities(searchable=True)),
+                Field("meta.count", FieldType.INT64),
+            ),
+        )
+
+    schema = IndexSchema(
+        name="searchable_object",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("meta", FieldType.OBJECT, capabilities=Capabilities(searchable=True)),
+            Field("meta.title", FieldType.STRING),
+        ),
+    )
+    assert schema.field("meta.title").type is FieldType.STRING
+
+
+def test_nested_field_requires_a_declared_parent():
+    """A dotted path must have a declared parent object."""
+    with pytest.raises(SchemaError, match="has no declared parent 'tags'"):
+        IndexSchema(
+            name="missing_parent",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("tags.test", FieldType.STRING),
+            ),
+        )
+
+
+def test_nested_field_parent_must_be_an_object():
+    """A dotted path cannot hang off a scalar parent."""
+    with pytest.raises(SchemaError, match="parent field 'tags' must be an object"):
+        IndexSchema(
+            name="bad_parent",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("tags", FieldType.STRING),
+                Field("tags.test", FieldType.STRING),
+            ),
+        )
+
+
+def test_three_level_nested_path_is_valid():
+    """A three-level path is valid when every parent is an object."""
+    schema = IndexSchema(
+        name="nested",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("a", FieldType.OBJECT),
+            Field("a.b", FieldType.OBJECT),
+            Field("a.b.c", FieldType.STRING),
+        ),
+    )
+    assert schema.field("a.b.c").type is FieldType.STRING
+
+
+def test_three_level_nested_path_requires_each_parent():
+    """A three-level path must declare both parents."""
+    with pytest.raises(SchemaError, match="has no declared parent 'a.b'"):
+        IndexSchema(
+            name="nested",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("a", FieldType.OBJECT),
+                Field("a.b.c", FieldType.STRING),
+            ),
+        )
+
+
+def test_searchable_object_three_levels_rejects_non_string_leaf():
+    """The searchable leaf check walks all declared levels."""
+    with pytest.raises(SchemaError, match="non-string leaf 'a.b.c'"):
+        IndexSchema(
+            name="nested",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("a", FieldType.OBJECT, capabilities=Capabilities(searchable=True)),
+                Field("a.b", FieldType.OBJECT),
+                Field("a.b.c", FieldType.INT64),
+            ),
+        )
+
+
 def test_required_fields_are_marked():
     """Fields the content/search builders always provide are required."""
     assert STUDIO_COURSE_SCHEMA.field("id").required is True

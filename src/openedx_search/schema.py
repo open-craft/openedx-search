@@ -171,6 +171,34 @@ def _validate_id(by_name: dict[str, Field]) -> None:
     _require(not id_field.array, "field 'id' cannot be an array")
 
 
+def _validate_parent_paths(by_name: dict[str, Field]) -> None:
+    """Require a declared object parent for every nested field path."""
+    for name in by_name:
+        if "." not in name:
+            continue
+        parent_name = name.rsplit(".", 1)[0]
+        parent = by_name.get(parent_name)
+        _require(parent is not None, f"field {name!r} has no declared parent {parent_name!r}")
+        _require(parent.type is FieldType.OBJECT, f"parent field {parent_name!r} must be an object")
+
+
+def _validate_searchable_objects(by_name: dict[str, Field]) -> None:
+    """Reject searchable objects whose declared leaves are not strings."""
+    for entry in by_name.values():
+        if entry.type is not FieldType.OBJECT or not entry.capabilities.searchable:
+            continue
+        prefix = entry.name + "."
+        for child_name, child in by_name.items():
+            if not child_name.startswith(prefix):
+                continue
+            if any(other_name.startswith(child_name + ".") for other_name in by_name):
+                continue
+            _require(
+                child.type is FieldType.STRING,
+                f"searchable object {entry.name!r} has non-string leaf {child_name!r}",
+            )
+
+
 @dataclass(frozen=True)
 class IndexSchema:
     """
@@ -207,6 +235,8 @@ class IndexSchema:
             by_name[entry.name] = entry
 
         _validate_id(by_name)
+        _validate_parent_paths(by_name)
+        _validate_searchable_objects(by_name)
 
     def field(self, name: str) -> Field:
         """
