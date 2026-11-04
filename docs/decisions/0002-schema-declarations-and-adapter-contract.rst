@@ -98,10 +98,16 @@ The engine is a deployment choice, configured once per deployment:
 ::
 
     OPENEDX_SEARCH_BACKENDS = {
-        "default": {"engine": "meilisearch", "url": "...", "api_key": "..."},
+        "default": {
+            "engine": "meilisearch",
+            "url": "...",
+            "public_url": "...",
+            "api_key": "...",
+        },
         "typesense": {
             "engine": "typesense",
             "url": "...",
+            "public_url": "...",
             "api_key": "...",
             "search_api_key": "...",
         },
@@ -116,7 +122,9 @@ The library ships no default engine.
 parent key for minting scoped search credentials, and Typesense requires it:
 the parent of a scoped key must allow only ``documents:search``, so the write key
 cannot mint one. Meilisearch mints tenant tokens from ``api_key`` and can omit
-it.
+it. ``url`` is the connection URL the backend uses, while ``public_url`` is the
+one the browser uses and defaults to ``url``. They differ when the engine is
+reachable internally but exposed through a proxy or a TLS terminator.
 
 Registrations are loaded by the consumer from its own ``AppConfig.ready()``.
 The library does not scan packages or import registration modules.
@@ -317,9 +325,9 @@ and ``query_by_weights`` from the schema, and deliberately not ``sort_by``:
 embedded parameters cannot be overridden, and the sort is a per-query choice.
 
 ``SearchCredential`` carries ``url``, ``index_name`` and ``api_key``. A bare key
-is not enough for the browser: the public engine URL is a separate setting from
-the backend's connection URL, and the physical index name belongs to the adapter,
-so a consumer cannot derive either.
+is not enough for the browser: ``url`` is the backend's ``public_url``, a
+separate setting from the connection ``url``, and the physical index name
+belongs to the adapter, so a consumer cannot derive either.
 
 ``upsert`` and ``delete`` take one bounded batch. ``documents`` is a sequence
 because a rebuild in progress submits the same batch twice. The API normalizes

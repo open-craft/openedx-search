@@ -32,10 +32,16 @@ Deployments choose the engine in configuration, not in the registration:
 .. code-block:: python
 
     OPENEDX_SEARCH_BACKENDS = {
-        "default": {"engine": "meilisearch", "url": "http://...", "api_key": "..."},
+        "default": {
+            "engine": "meilisearch",
+            "url": "http://...",
+            "public_url": "https://...",
+            "api_key": "...",
+        },
         "typesense": {
             "engine": "typesense",
             "url": "http://...",
+            "public_url": "https://...",
             "api_key": "...",
             "search_api_key": "...",
         },
@@ -47,7 +53,9 @@ Deployments choose the engine in configuration, not in the registration:
 and raises ``BackendNotConfigured`` when neither is set. The library ships no
 default engine on purpose. ``search_api_key`` is the parent key for scoped
 search credentials; Typesense requires it because the parent of a scoped key must
-allow only ``documents:search``, so ``api_key`` cannot mint one.
+allow only ``documents:search``, so ``api_key`` cannot mint one. ``url`` is the
+connection URL, while ``public_url`` is the one the browser uses and defaults to
+``url`` when unset.
 
 Loading registrations
 *********************

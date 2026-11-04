@@ -104,6 +104,43 @@ def test_invalid_search_api_key_raises():
             get_backend_config()
 
 
+def test_public_url_defaults_to_connection_url():
+    """A single-host deployment uses one URL for both."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={"default": {"engine": "meilisearch", "url": "http://localhost:7700"}},
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+    ):
+        assert get_backend_config().public_url == "http://localhost:7700"
+
+
+def test_public_url_can_differ_from_connection_url():
+    """The browser URL can be the proxied address while the backend uses the internal one."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={
+            "default": {
+                "engine": "typesense",
+                "url": "http://typesense:8108",
+                "public_url": "https://search.example.com",
+            }
+        },
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+    ):
+        config = get_backend_config()
+
+    assert config.options["url"] == "http://typesense:8108"
+    assert config.public_url == "https://search.example.com"
+
+
+def test_invalid_public_url_raises():
+    """An empty public URL is a configuration error."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={"default": {"engine": "meilisearch", "public_url": ""}},
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+    ):
+        with pytest.raises(BackendNotFound):
+            get_backend_config()
+
+
 def test_non_mapping_backends_raise():
     """The backends setting must be a mapping."""
     with override_settings(OPENEDX_SEARCH_BACKENDS="not-a-mapping", OPENEDX_SEARCH_DEFAULT_BACKEND="default"):

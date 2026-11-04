@@ -121,10 +121,10 @@ class SearchCredential:
     """
     What the browser needs to query the engine directly.
 
-    ``url`` is the public engine URL, which can differ from the backend's
-    connection URL. ``index_name`` is the physical name the adapter created, not
-    the logical index of the registration, so consumers never derive it.
-    ``api_key`` is the scoped key.
+    ``url`` is the public engine URL (``BackendConfig.public_url``), which can
+    differ from the backend's connection URL. ``index_name`` is the physical name
+    the adapter created, not the logical index of the registration, so consumers
+    never derive it. ``api_key`` is the scoped key.
     """
 
     url: str

@@ -42,18 +42,27 @@ class BackendConfig:
     Typesense requires it separately from ``api_key``: the parent of a scoped key
     must allow only ``documents:search``, so the write key cannot mint one.
     Both keys are excluded from ``repr`` so credentials do not leak into logs.
+
+    ``url`` in ``options`` is the connection URL the backend uses.
+    ``public_url`` is the address the browser uses, which can differ when the
+    engine is internal but proxied or TLS-terminated; it defaults to the
+    connection URL when unset.
     """
 
     name: str
     engine: str
     search_api_key: str | None = field(default=None, repr=False)
+    public_url: str | None = None
     options: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate the search key and freeze the options mapping."""
+        """Validate the search key and public URL, and freeze the options."""
         if self.search_api_key is not None:
             if not isinstance(self.search_api_key, str) or not self.search_api_key:
                 raise ValueError("search_api_key must be a non-empty string")
+        if self.public_url is not None:
+            if not isinstance(self.public_url, str) or not self.public_url:
+                raise ValueError("public_url must be a non-empty string")
         object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
 
 
@@ -98,9 +107,17 @@ def get_backend_config(use_case: str | None = None) -> BackendConfig:
     if search_api_key is not None and (not isinstance(search_api_key, str) or not search_api_key):
         raise BackendNotFound(f"Search backend {name!r} has an invalid search_api_key")
 
+    public_url = options.pop("public_url", None)
+    if public_url is None:
+        fallback = options.get("url")
+        public_url = fallback if isinstance(fallback, str) and fallback else None
+    if public_url is not None and (not isinstance(public_url, str) or not public_url):
+        raise BackendNotFound(f"Search backend {name!r} has an invalid public_url")
+
     return BackendConfig(
         name=name,
         engine=engine,
         search_api_key=search_api_key,
+        public_url=public_url,
         options=options,
     )
