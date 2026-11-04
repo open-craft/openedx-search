@@ -224,10 +224,16 @@ sleeps or retries; scheduling and backoff belong to the indexing worker, per
 ADR 0001 Decision 9. A synchronous engine returns an already-complete receipt
 without a request.
 
-``begin_rebuild()`` creates the target from ``self.schema`` and returns a
-``RebuildTarget``. ``commit_rebuild(target)`` waits for the target's writes,
-swaps it into place and deletes the old target. ``abort_rebuild(target)``
-discards it. The library orchestrates these primitives in section 4.
+``begin_rebuild()`` creates a target from ``self.schema`` and returns a
+``RebuildTarget(index, version, generation)``. The generation is unique to the
+rebuild and is not the schema version, so the target name
+(``<index>_v<version>_<generation>``) never collides with the live index, which
+Typesense names for the index and version and cannot rename. A leftover target
+from a crashed worker is removed, never reused: a rebuild only upserts, so a
+reused target would keep documents deleted after the crash.
+``commit_rebuild(target)`` waits for the target's writes, swaps it into place
+and deletes the old target. ``abort_rebuild(target)`` discards it. The library
+orchestrates these primitives in section 4.
 
 ``search`` and ``mint_credential`` are the read-side adapter methods; section 4
 describes their consumer contract.
@@ -301,9 +307,10 @@ target.
 backoff (section 3).
 
 ``rebuild`` resolves the registration, calls ``begin_rebuild``, records the
-target in the shared Redis cache, and iterates ``document_source``. The target
-name is deterministic for an index and schema version, so ``begin_rebuild`` can
-delete or reuse a leftover target from a crashed worker. The cache key is per use
+target in the shared Redis cache, and iterates ``document_source``.
+``begin_rebuild`` starts from a fresh generation and removes leftovers with the
+same index and version prefix, so a crashed rebuild never leaves a target that a
+later one reuses. The cache key is per use
 case and holds the ``RebuildTarget`` with a lease. The rebuild refreshes the
 lease as it processes batches and checks it before ``commit_rebuild``; if the
 lease is gone or expired, it aborts instead of swapping a target that may have

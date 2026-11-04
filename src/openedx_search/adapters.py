@@ -102,12 +102,21 @@ class RebuildTarget:
     """
     A rebuild target created by ``begin_rebuild``.
 
-    The adapter derives the target name deterministically from the index and
-    schema version, so the next rebuild can clear a leftover target.
+    ``generation`` is unique to one rebuild and is not the schema version. The
+    adapter derives the target name from ``name``, so a second rebuild at the
+    same version never derives the live index's name. That matters on Typesense,
+    where the alias points at a collection named for the index and version and a
+    collection cannot be renamed.
     """
 
     index: str
     version: int
+    generation: str
+
+    @property
+    def name(self) -> str:
+        """Return the engine-visible target name."""
+        return f"{self.index}_v{self.version}_{self.generation}"
 
 
 @dataclass(frozen=True)
@@ -169,9 +178,12 @@ class Adapter(ABC):
     @abstractmethod
     def begin_rebuild(self) -> RebuildTarget:
         """
-        Create or reuse the deterministic target for ``self.schema``.
+        Create a fresh target for ``self.schema`` and return its handle.
 
-        A leftover target with the same name is deleted or reused.
+        The adapter picks a generation unique to this rebuild and derives the
+        name from it. It never reuses a leftover target, because a rebuild only
+        upserts and would keep documents deleted after the crash; leftovers with
+        the same index and version prefix are removed instead.
         """
 
     @abstractmethod
