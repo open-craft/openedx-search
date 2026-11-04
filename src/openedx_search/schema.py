@@ -26,9 +26,9 @@ __all__ = [
     "Searchable",
 ]
 
-INDEX_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
-FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
-USE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+INDEX_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+\Z")
+FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*\Z")
+USE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\Z")
 
 
 class SchemaError(ValueError):
@@ -84,7 +84,8 @@ class Searchable:
     Searchable configuration for a field.
 
     ``order`` is the field's position in the attribute ranking order: lower is
-    more important. It is an index setting, not a query parameter.
+    more important. Meilisearch stores it as an index setting, and Typesense
+    receives it per query through ``query_by`` and ``query_by_weights``.
     """
 
     order: int | None = None

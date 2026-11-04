@@ -5,9 +5,9 @@ ADR 0002, Decision 1: every search use case registers itself, declaring its
 logical index and schema. The registration is engine-neutral; the deployment
 chooses the backend.
 
-The registry is process-local and thread-safe. Registrations normally happen at
-import time, and ``replace=True`` is available for development reloads and
-tests.
+The registry is process-local and thread-safe. Consumers register from their
+``AppConfig.ready()``, and ``replace=True`` is available for development reloads
+and tests.
 """
 
 from __future__ import annotations

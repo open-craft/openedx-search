@@ -190,7 +190,7 @@ adapter that cannot represent ``geopoint`` fields:
         }
         if missing:
             raise UnsupportedSchema(
-                f"{self.name} cannot represent: {', '.join(sorted(missing))}"
+                f"{self.backend.engine} cannot represent: {', '.join(sorted(missing))}"
             )
 
 Document validation is a separate, library-level step. Before a document is
