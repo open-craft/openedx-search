@@ -126,7 +126,7 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
     delete(primary_keys=None, *, filter=None, target=None) -> WriteReceipt
     check_write(receipt)                                   -> WriteReceipt
     search(query)                                          -> SearchResult
-    mint_credential(scope, expires_in)                     -> str
+    mint_credential(scope, expires_in)                     -> SearchCredential
 
 A schema passes two checks, at different times. The first needs no engine and no
 settings: the neutral model rejects declarations that no supported engine can
@@ -247,7 +247,7 @@ registration and backend and exposes these functions:
 ::
 
     search(use_case, query)                             -> SearchResult
-    mint_credential(use_case, scope, expires_in)        -> str
+    mint_credential(use_case, scope, expires_in)        -> SearchCredential
     upsert(use_case, documents)                         -> WriteReceipt
     delete(use_case, primary_keys=None, *, filter=None) -> WriteReceipt
     check_write(use_case, receipt)                      -> WriteReceipt
@@ -297,13 +297,18 @@ consumer needs one; adding it extends ``FilterTerm`` rather than the expression
 shape.
 
 ``mint_credential`` takes a ``CredentialScope`` of tenant filters and a
-positive ``expires_in`` lifetime as a ``timedelta``, and returns the scoped
-credential. It is derived locally (Meilisearch tenant tokens, Typesense scoped
-search keys), so Django is not in the search path. The adapter converts
-``expires_in`` to the engine's absolute expiry (Typesense's Unix timestamp,
-Meilisearch's expiry date). For Typesense the key embeds ``query_by`` and
-``query_by_weights`` from the schema, and deliberately not ``sort_by``: embedded
-parameters cannot be overridden, and the sort is a per-query choice.
+positive ``expires_in`` lifetime as a ``timedelta``, and returns a
+``SearchCredential``. It is derived locally (Meilisearch tenant tokens,
+Typesense scoped search keys), so Django is not in the search path. The adapter
+converts ``expires_in`` to the engine's absolute expiry (Typesense's Unix
+timestamp, Meilisearch's expiry date). For Typesense the key embeds ``query_by``
+and ``query_by_weights`` from the schema, and deliberately not ``sort_by``:
+embedded parameters cannot be overridden, and the sort is a per-query choice.
+
+``SearchCredential`` carries ``url``, ``index_name`` and ``api_key``. A bare key
+is not enough for the browser: the public engine URL is a separate setting from
+the backend's connection URL, and the physical index name belongs to the adapter,
+so a consumer cannot derive either.
 
 ``upsert`` and ``delete`` take one bounded batch. ``documents`` is a sequence
 because a rebuild in progress submits the same batch twice. The API normalizes

@@ -22,6 +22,7 @@ from .adapters import (
     FilterExpression,
     PrimaryKey,
     RebuildTarget,
+    SearchCredential,
     SearchResult,
     WriteReceipt,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "DocumentSource",
     "RebuildInProgress",
     "RebuildResult",
+    "SearchCredential",
     "check_write",
     "delete",
     "mint_credential",
@@ -162,7 +164,7 @@ def search(use_case: str, query: Any) -> SearchResult:
 
 def mint_credential(  # pylint: disable=unused-argument
     use_case: str, scope: CredentialScope, expires_in: timedelta
-) -> str:
+) -> SearchCredential:
     """
     Mint a scoped, expiring credential for direct frontend queries.
 
@@ -171,6 +173,11 @@ def mint_credential(  # pylint: disable=unused-argument
     converts it to the engine's absolute expiry (Typesense's Unix timestamp,
     Meilisearch's expiry date). The credential is derived locally; no request is
     proxied through Django.
+
+    Returns a :class:`SearchCredential` with the public engine URL, the physical
+    index name and the scoped key. The URL can differ from the backend's
+    connection URL, and the index name belongs to the adapter, so the browser
+    needs all three rather than a bare key.
     """
     if expires_in <= timedelta(0):
         raise ValueError("expires_in must be positive")

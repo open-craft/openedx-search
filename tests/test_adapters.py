@@ -2,7 +2,7 @@
 
 import pytest
 
-from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, RebuildTarget
+from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, RebuildTarget, SearchCredential
 
 
 def test_credential_scope_defaults_to_no_filters():
@@ -68,3 +68,22 @@ def test_rebuild_target_name_includes_a_generation():
 
     assert first.name == "studio_content_v2_20261104"
     assert first.name != second.name
+
+
+def test_search_credential_carries_browser_fields():
+    """The browser needs the public URL, the physical index and the key."""
+    credential = SearchCredential(
+        url="https://search.example.com",
+        index_name="studio_content_v2",
+        api_key="scoped-key",
+    )
+
+    assert credential.url == "https://search.example.com"
+    assert credential.index_name == "studio_content_v2"
+    assert credential.api_key == "scoped-key"
+
+
+def test_search_credential_requires_every_field():
+    """A credential without an index name cannot be used by the browser."""
+    with pytest.raises(ValueError, match="index_name"):
+        SearchCredential(url="https://search.example.com", index_name="", api_key="scoped-key")

@@ -31,6 +31,7 @@ __all__ = [
     "PrimaryKey",
     "RebuildTarget",
     "ReconcileResult",
+    "SearchCredential",
     "SearchResult",
     "UnsupportedSchema",
     "WriteFailed",
@@ -113,6 +114,29 @@ class WriteReceipt:
 
     task_id: int | None = None
     complete: bool = False
+
+
+@dataclass(frozen=True)
+class SearchCredential:
+    """
+    What the browser needs to query the engine directly.
+
+    ``url`` is the public engine URL, which can differ from the backend's
+    connection URL. ``index_name`` is the physical name the adapter created, not
+    the logical index of the registration, so consumers never derive it.
+    ``api_key`` is the scoped key.
+    """
+
+    url: str
+    index_name: str
+    api_key: str
+
+    def __post_init__(self) -> None:
+        """Require all three fields."""
+        for name in ("url", "index_name", "api_key"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} must be a non-empty string")
 
 
 @dataclass(frozen=True)
@@ -235,5 +259,5 @@ class Adapter(ABC):
         """Run one search. The query model is specified separately."""
 
     @abstractmethod
-    def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> str:
-        """Mint a scoped, expiring credential."""
+    def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:
+        """Mint a scoped, expiring credential and the endpoint to use it against."""
