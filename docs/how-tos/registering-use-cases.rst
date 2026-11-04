@@ -139,6 +139,11 @@ incompatible document. A task that hits it retries until the migration finishes:
 ``acks_late`` and ``reject_on_worker_lost`` requeue a task whose worker dies
 mid-run; the retry covers the pause.
 
+The rebuild target and lease live in the cache selected by
+``OPENEDX_SEARCH_CACHE_ALIAS`` (default ``default``). Point it at a shared Redis
+cache, not the platform's memcached default: an eviction aborts the rebuild
+rather than corrupting it.
+
 Indexing tasks should carry a document key and re-read the document when they
 run, so a task enqueued before the pause writes the new shape when it is
 retried. Give the pods a termination grace period longer than the slowest task,

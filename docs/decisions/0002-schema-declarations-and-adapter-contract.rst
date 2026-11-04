@@ -343,19 +343,27 @@ target when the target carries the same schema version.
 backoff (section 3).
 
 ``rebuild`` resolves the registration, calls ``begin_rebuild``, records the
-target in the shared Redis cache, and iterates ``document_source``.
+target in the shared cache, and iterates ``document_source``.
 ``begin_rebuild`` starts from a fresh generation and removes leftovers with the
 same index and version prefix, so a crashed rebuild never leaves a target that a
-later one reuses. The cache key is per use
-case and holds the ``RebuildTarget`` with a lease. The rebuild refreshes the
-lease as it processes batches and checks it before ``commit_rebuild``; if the
-lease is gone or expired, it aborts instead of swapping a target that may have
-missed concurrent writes. A writer treats an expired lease as no active rebuild
-and clears the stale key. A writer dual-writes only when the target's version
-equals its registration's version; a mismatch raises ``SchemaVersionMismatch``
-(see below). ``commit_rebuild`` and
-``abort_rebuild`` clear it. The cache must be Redis, so every writer process
-reads the same target; the process-local cache is not sufficient.
+later one reuses. The cache key is per use case and holds the ``RebuildTarget``,
+whose generation is the lease owner. Acquisition is one atomic ``cache.add``; a
+second rebuild fails with ``RebuildInProgress``. The rebuild refreshes the lease
+with ``cache.touch``, which only extends an existing key, and aborts when the key
+is gone. Before ``commit_rebuild`` it reads the key and compares the stored
+generation with its own target; a missing or different generation means another
+rebuild took over, so it aborts instead of swapping a target that may have missed
+concurrent writes. ``commit_rebuild`` and ``abort_rebuild`` clear the key. A
+writer reads the key on every write; no key means no active rebuild. It
+dual-writes only when the target's version equals its registration's version; a
+mismatch raises ``SchemaVersionMismatch`` (see below). The cache is selected by
+``OPENEDX_SEARCH_CACHE_ALIAS``, which defaults to ``default``, and must be shared
+across writer processes, so the process-local cache is not sufficient. Use a
+dedicated Redis cache for this alias: the platform default is memcached, and an
+eviction there aborts the rebuild instead of corrupting it. Redis persistence
+keeps the lease across a cache restart, but it is not a checkpoint: a crashed
+rebuild is discarded and restarts from the beginning, and the lease TTL bounds
+how long it blocks the next rebuild.
 
 The source is a callable returning an iterator of batches, invoked in the rebuild
 worker, so a consumer can page through its database without materializing the
