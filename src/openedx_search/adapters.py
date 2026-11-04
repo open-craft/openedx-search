@@ -26,6 +26,7 @@ __all__ = [
     "Document",
     "DocumentBatch",
     "FilterExpression",
+    "FilterGroup",
     "FilterTerm",
     "PrimaryKey",
     "RebuildTarget",
@@ -55,7 +56,7 @@ class WriteFailed(AdapterError):
 
 @dataclass(frozen=True)
 class FilterTerm:
-    """One exact-match filter clause; multiple terms are combined with AND."""
+    """One exact-match filter clause."""
 
     field: str
     values: tuple[str | int, ...]
@@ -75,7 +76,24 @@ class FilterTerm:
         object.__setattr__(self, "values", values)
 
 
-FilterExpression: TypeAlias = tuple[FilterTerm, ...]
+@dataclass(frozen=True)
+class FilterGroup:
+    """Terms combined with OR; groups are combined with AND."""
+
+    terms: tuple[FilterTerm, ...]
+
+    def __post_init__(self) -> None:
+        """Validate and freeze the group."""
+        terms = tuple(self.terms)
+        if not terms:
+            raise ValueError("a filter group needs at least one term")
+        for term in terms:
+            if not isinstance(term, FilterTerm):
+                raise ValueError("filter group terms must be FilterTerm instances")
+        object.__setattr__(self, "terms", terms)
+
+
+FilterExpression: TypeAlias = tuple[FilterGroup, ...]
 
 
 @dataclass(frozen=True)

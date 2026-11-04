@@ -284,9 +284,17 @@ library adds only the behaviour below.
 
 ``search`` is for maintenance and conformance, not the frontend search path:
 the browser queries the engine directly with a scoped credential, per ADR 0001
-Decision 7. Query terms are per request, not part of the schema: callers build
-filter terms and adapters render them, and raw filter strings do not cross the
-API.
+Decision 7. Query terms are per request, not part of the schema.
+
+Filters are exact matches. ``FilterExpression`` is a sequence of
+``FilterGroup`` values combined with AND, and each group holds ``FilterTerm``
+values combined with OR. Studio's tenant filter is one group with ``org IN
+[...]`` and ``access_id IN [...]``: the fields are alternatives, not
+requirements. Adapters render the expression in their own syntax, and raw engine
+filters never cross the API. The model covers exact matches combined with AND and
+OR. Negation, ranges and field-to-field comparisons are out of scope until a
+consumer needs one; adding it extends ``FilterTerm`` rather than the expression
+shape.
 
 ``mint_credential`` takes a ``CredentialScope`` of tenant filters and a
 positive ``expires_in`` lifetime as a ``timedelta``, and returns the scoped
