@@ -55,7 +55,9 @@ default engine on purpose. ``search_api_key`` is the parent key for scoped
 search credentials; Typesense requires it because the parent of a scoped key must
 allow only ``documents:search``, so ``api_key`` cannot mint one. ``url`` is the
 connection URL, while ``public_url`` is the one the browser uses and defaults to
-``url`` when unset.
+``url`` when unset. The entry is typed: ``engine``, ``url`` and ``api_key`` are
+required, ``search_api_key`` and ``public_url`` are optional, and any other key is
+rejected, so a typo fails at resolution.
 
 Loading registrations
 *********************

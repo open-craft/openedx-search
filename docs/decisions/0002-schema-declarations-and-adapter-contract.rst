@@ -125,6 +125,10 @@ cannot mint one. Meilisearch mints tenant tokens from ``api_key`` and can omit
 it. ``url`` is the connection URL the backend uses, while ``public_url`` is the
 one the browser uses and defaults to ``url``. They differ when the engine is
 reachable internally but exposed through a proxy or a TLS terminator.
+``engine``, ``url`` and ``api_key`` are required, ``search_api_key`` and
+``public_url`` are optional, and any other key is rejected. The entry is typed
+rather than a free-form mapping, so a typo fails when the backend is resolved
+instead of being ignored until the first write.
 
 Registrations are loaded by the consumer from its own ``AppConfig.ready()``.
 The library does not scan packages or import registration modules.

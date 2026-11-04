@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from types import MappingProxyType
-from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -24,46 +22,52 @@ __all__ = [
     "get_backend_config",
 ]
 
+KNOWN_KEYS = frozenset({"engine", "url", "api_key", "search_api_key", "public_url"})
+
 
 class BackendNotConfigured(ImproperlyConfigured):
     """No usable backend configuration exists."""
 
 
 class BackendNotFound(ImproperlyConfigured):
-    """The selected backend name is not declared."""
+    """The selected backend is missing or invalid."""
 
 
 @dataclass(frozen=True)
 class BackendConfig:
     """
-    One resolved backend: a named engine connection and its options.
+    One resolved backend: a named engine connection.
 
+    ``url`` is the connection URL and ``api_key`` the write key.
     ``search_api_key`` is the parent key for minting scoped search credentials.
-    Typesense requires it separately from ``api_key``: the parent of a scoped key
-    must allow only ``documents:search``, so the write key cannot mint one.
-    Both keys are excluded from ``repr`` so credentials do not leak into logs.
+    Typesense requires it separately: the parent of a scoped key must allow only
+    ``documents:search``, so the write key cannot mint one. Both keys are
+    excluded from ``repr`` so credentials do not leak into logs.
 
-    ``url`` in ``options`` is the connection URL the backend uses.
-    ``public_url`` is the address the browser uses, which can differ when the
-    engine is internal but proxied or TLS-terminated; it defaults to the
-    connection URL when unset.
+    ``public_url`` is the address the browser uses. It can differ from the
+    connection URL when the engine is internal but proxied or TLS-terminated,
+    and defaults to that URL when unset.
     """
 
     name: str
     engine: str
+    url: str
+    api_key: str = field(repr=False)
     search_api_key: str | None = field(default=None, repr=False)
     public_url: str | None = None
-    options: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
-        """Validate the search key and public URL, and freeze the options."""
+        """Validate the connection settings."""
+        for attribute in ("engine", "url", "api_key"):
+            value = getattr(self, attribute)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{attribute} must be a non-empty string")
         if self.search_api_key is not None:
             if not isinstance(self.search_api_key, str) or not self.search_api_key:
                 raise ValueError("search_api_key must be a non-empty string")
         if self.public_url is not None:
             if not isinstance(self.public_url, str) or not self.public_url:
                 raise ValueError("public_url must be a non-empty string")
-        object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
 
 
 def get_backend_config(use_case: str | None = None) -> BackendConfig:
@@ -72,7 +76,7 @@ def get_backend_config(use_case: str | None = None) -> BackendConfig:
 
     Resolution order: the per-use-case override, then the deployment default.
     Raises ``BackendNotConfigured`` when neither is set, and ``BackendNotFound``
-    when the selected name is missing from ``OPENEDX_SEARCH_BACKENDS``.
+    when the selected entry is missing, incomplete, or has unknown keys.
     """
     backends = getattr(settings, "OPENEDX_SEARCH_BACKENDS", {}) or {}
     if not isinstance(backends, Mapping):
@@ -98,26 +102,34 @@ def get_backend_config(use_case: str | None = None) -> BackendConfig:
     if not isinstance(declared, Mapping):
         raise BackendNotFound(f"Search backend {name!r} must be a mapping")
 
-    options = dict(declared)
-    engine = options.pop("engine", None)
-    if not isinstance(engine, str) or not engine:
-        raise BackendNotFound(f"Search backend {name!r} has no engine")
+    unknown = set(declared) - KNOWN_KEYS
+    if unknown:
+        raise BackendNotFound(
+            f"Search backend {name!r} has unknown keys: {', '.join(sorted(unknown))}"
+        )
 
-    search_api_key = options.pop("search_api_key", None)
+    engine = declared.get("engine")
+    url = declared.get("url")
+    api_key = declared.get("api_key")
+    for key, value in (("engine", engine), ("url", url), ("api_key", api_key)):
+        if not isinstance(value, str) or not value:
+            raise BackendNotFound(f"Search backend {name!r} has no valid {key}")
+
+    search_api_key = declared.get("search_api_key")
     if search_api_key is not None and (not isinstance(search_api_key, str) or not search_api_key):
         raise BackendNotFound(f"Search backend {name!r} has an invalid search_api_key")
 
-    public_url = options.pop("public_url", None)
+    public_url = declared.get("public_url")
     if public_url is None:
-        fallback = options.get("url")
-        public_url = fallback if isinstance(fallback, str) and fallback else None
-    if public_url is not None and (not isinstance(public_url, str) or not public_url):
+        public_url = url
+    if not isinstance(public_url, str) or not public_url:
         raise BackendNotFound(f"Search backend {name!r} has an invalid public_url")
 
     return BackendConfig(
         name=name,
         engine=engine,
+        url=url,
+        api_key=api_key,
         search_api_key=search_api_key,
         public_url=public_url,
-        options=options,
     )
