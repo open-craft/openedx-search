@@ -60,14 +60,16 @@ def upsert(use_case: str, documents: DocumentBatch) -> WriteReceipt:
     """
     Submit one bounded batch of documents for upsert.
 
-    ``documents`` is a sequence, not a one-shot iterator, because a rebuild in
-    progress submits the same batch to both the live index and the target. The
-    returned receipt covers the live index; the rebuild confirms the target's
-    copy before it swaps.
+    ``documents`` is a sequence, not a one-shot iterator, because a same-version
+    reindex in progress submits the same batch to both the live index and the
+    target. The returned receipt covers the live index; the reindex confirms the
+    target's copy before it swaps.
 
-    During a rebuild the batch is also submitted to the rebuild target. A
-    failure in either submission is raised to the caller. The caller may retry
-    with the same batch, since the operation is an upsert.
+    During a same-version reindex the batch is also submitted to the rebuild
+    target. A failure in either submission is raised to the caller. The caller
+    may retry with the same batch, since the operation is an upsert. A target
+    with a different schema version is a migration, whose writers are stopped;
+    submitting to it raises ``SchemaVersionMismatch``.
     """
     raise NotImplementedError("upsert is implemented with the engine adapters")
 
@@ -101,8 +103,9 @@ def delete(
     filter expression used by search, never a raw engine string.
 
     Exactly one of ``primary_keys`` and ``filter`` is required, and neither may
-    be empty, so a bare call cannot empty an index. During a rebuild the delete
-    is also submitted to the rebuild target.
+    be empty, so a bare call cannot empty an index. During a same-version
+    reindex the delete is also submitted to the target; a target with a
+    different version raises ``SchemaVersionMismatch``.
     """
     raise NotImplementedError("delete is implemented with the engine adapters")
 
@@ -129,24 +132,27 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     materializing the corpus. Paging, resumability and progress reporting
     belong to the source.
 
-    The library creates a fresh target, records it in the shared Redis cache
-    with a lease so concurrent writes reach both the live index and the target,
-    confirms each source batch, and swaps the target in only after its writes are
-    complete. The target name includes a generation unique to this rebuild, so a
-    second rebuild at the same version never derives the live index's name.
-    Leftovers from a crashed worker are removed by ``begin_rebuild``, never
-    reused: a rebuild only upserts and would keep documents deleted after the
-    crash. The worker checks its lease before committing; an expired or missing
-    lease aborts the target. A process ignores or aborts a target whose version
-    does not match its local registration. A failure aborts the target.
+    There are two cases. A reindex keeps the schema version, so concurrent
+    writes dual-write to the live index and the target and the swap is invisible
+    to readers. A migration changes the version, so the caller must stop every
+    writer first: the target cannot accept the old documents, and the live index
+    cannot accept the new ones.
 
-    A rebuild is not a consistent snapshot. If a write reaches the target
+    The library creates a fresh target, records it in the shared Redis cache
+    with a lease, confirms each source batch, and swaps the target in only after
+    its writes are complete. The target name includes a generation unique to this
+    rebuild, so a second rebuild at the same version never derives the live
+    index's name. Leftovers from a crashed worker are removed by
+    ``begin_rebuild``, never reused: a rebuild only upserts and would keep
+    documents deleted after the crash. The worker checks its lease before
+    committing; an expired or missing lease aborts the target. A failure aborts
+    the target.
+
+    A reindex is not a consistent snapshot. If a write reaches the target
     before the source writes the same document from an older read, the
     source's older version wins in the target. A delete can be undone the same
-    way if the source yields the deleted document afterwards. This is the same
-    window the current ``content/search``
-    rebuild has; callers that need a strict snapshot must stop writes for the
-    duration of the rebuild.
+    way if the source yields the deleted document afterwards. A migration has no
+    such window because its writers are stopped.
     """
     raise NotImplementedError("rebuild is implemented with the engine adapters")
 

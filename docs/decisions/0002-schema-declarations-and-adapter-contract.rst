@@ -334,10 +334,10 @@ separate setting from the connection ``url``, and the physical index name
 belongs to the adapter, so a consumer cannot derive either.
 
 ``upsert`` and ``delete`` take one bounded batch. ``documents`` is a sequence
-because a rebuild in progress submits the same batch twice. The API normalizes
+because a reindex in progress submits the same batch twice. The API normalizes
 a single primary key to a tuple and otherwise uses the delete forms from
-section 3. During a rebuild, both functions submit to the live index and the
-target.
+section 3. During a reindex, both functions submit to the live index and the
+target when the target carries the same schema version.
 
 ``check_write`` delegates one poll to the adapter; the worker owns retry and
 backoff (section 3).
@@ -351,27 +351,55 @@ case and holds the ``RebuildTarget`` with a lease. The rebuild refreshes the
 lease as it processes batches and checks it before ``commit_rebuild``; if the
 lease is gone or expired, it aborts instead of swapping a target that may have
 missed concurrent writes. A writer treats an expired lease as no active rebuild
-and clears the stale key. A process also ignores or aborts a target whose
-``RebuildTarget.version`` does not match its local registration, so a rolling
-deploy cannot dual-write across schema versions. ``commit_rebuild`` and
+and clears the stale key. A writer dual-writes only when the target's version
+equals its registration's version; a mismatch raises ``SchemaVersionMismatch``
+(see below). ``commit_rebuild`` and
 ``abort_rebuild`` clear it. The cache must be Redis, so every writer process
 reads the same target; the process-local cache is not sufficient.
 
 The source is a callable returning an iterator of batches, invoked in the rebuild
 worker, so a consumer can page through its database without materializing the
 corpus. Each batch goes to the target and is confirmed with ``check_write``
-before the next is requested. While the target is recorded, ``upsert`` and
-``delete`` submit to both the live index and the target. ``commit_rebuild`` swaps
-the target in and deletes the old target; any failure aborts it.
+before the next is requested. While a same-version target is recorded, ``upsert``
+and ``delete`` submit to both the live index and the target.
+``commit_rebuild`` swaps the target in and deletes the old target; any failure
+aborts it.
 
-A rebuild is not a consistent snapshot. The document source reads from the
+A reindex is not a consistent snapshot. The document source reads from the
 consumer's database while writes continue. If a write reaches the target before
 the source writes the same document from an older read, the source's version
 wins in the target. A delete followed by the source yielding the deleted
 document has the same effect. The window is bounded by the time between the
 source's read and its write to the target. This matches the current
 ``content/search`` rebuild and the dual-write recipe Typesense documents for
-zero-downtime reindexing.
+zero-downtime reindexing. A migration has no such window because its writers are
+stopped.
+
+Rebuilds and schema versions
+----------------------------
+
+There are two rebuilds, and the registration version decides which one is safe:
+
+* **Reindex, same version.** The live index and the target accept the same
+  documents, so ``upsert`` and ``delete`` dual-write while the rebuild runs. No
+  writer stops, and the swap is invisible to readers. This applies to data
+  repairs, a settings change that needs a full reindex, and source changes.
+* **Migration, new version.** The live index and the target do not accept the
+  same documents, so no process may write during the rebuild. Stop every writer,
+  deploy the new code, run the rebuild to completion, commit the swap, then
+  resume writes.
+
+Reads keep serving the old index during a migration; a consumer whose read path
+depends on the new shape extends the window to reads as well. Stop writers
+before deploying, because a new writer matches the target version and would
+dual-write against the old live index.
+
+The version guard separates the two: ``upsert`` and ``delete`` dual-write only
+when the recorded target's version equals their registration's version. A
+mismatch raises ``SchemaVersionMismatch`` in the writer. It does not write a
+stale shape, does not drop the write, and does not abort the rebuild. An old
+writer that survives a migration whose pause was incomplete fails loudly instead
+of corrupting the target.
 
 Consequences
 ************
@@ -382,9 +410,10 @@ Consequences
    transport.
 3. Unsupported capabilities fail during deployment, before data is indexed.
 4. Adding Algolia remains additive: capability flags plus a renderer.
-5. A rebuild is not point-in-time consistent: a document changed between the
+5. A reindex is not point-in-time consistent: a document changed between the
    source's read and its write can be indexed in its older form in the target.
-   The next write to that document, or a follow-up rebuild, corrects it.
+   The next write to that document, or a follow-up rebuild, corrects it. A
+   migration has no such window because its writers are stopped.
 
 Alternatives Considered
 ***********************
