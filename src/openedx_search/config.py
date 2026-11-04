@@ -38,15 +38,22 @@ class BackendConfig:
     """
     One resolved backend: a named engine connection and its options.
 
-    ``options`` is excluded from ``repr`` so credentials do not leak into logs.
+    ``search_api_key`` is the parent key for minting scoped search credentials.
+    Typesense requires it separately from ``api_key``: the parent of a scoped key
+    must allow only ``documents:search``, so the write key cannot mint one.
+    Both keys are excluded from ``repr`` so credentials do not leak into logs.
     """
 
     name: str
     engine: str
+    search_api_key: str | None = field(default=None, repr=False)
     options: Mapping[str, Any] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
-        """Freeze the options mapping."""
+        """Validate the search key and freeze the options mapping."""
+        if self.search_api_key is not None:
+            if not isinstance(self.search_api_key, str) or not self.search_api_key:
+                raise ValueError("search_api_key must be a non-empty string")
         object.__setattr__(self, "options", MappingProxyType(dict(self.options)))
 
 
@@ -87,4 +94,13 @@ def get_backend_config(use_case: str | None = None) -> BackendConfig:
     if not isinstance(engine, str) or not engine:
         raise BackendNotFound(f"Search backend {name!r} has no engine")
 
-    return BackendConfig(name=name, engine=engine, options=options)
+    search_api_key = options.pop("search_api_key", None)
+    if search_api_key is not None and (not isinstance(search_api_key, str) or not search_api_key):
+        raise BackendNotFound(f"Search backend {name!r} has an invalid search_api_key")
+
+    return BackendConfig(
+        name=name,
+        engine=engine,
+        search_api_key=search_api_key,
+        options=options,
+    )

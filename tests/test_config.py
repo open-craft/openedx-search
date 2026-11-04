@@ -65,6 +65,45 @@ def test_options_are_frozen_and_hidden():
         config.options["api_key"] = "other"
 
 
+def test_resolves_search_api_key():
+    """The search key is a first-class field, not part of the options."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={
+            "default": {
+                "engine": "typesense",
+                "url": "http://localhost:8108",
+                "api_key": "write-secret",
+                "search_api_key": "search-secret",
+            }
+        },
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+    ):
+        config = get_backend_config()
+
+    assert config.search_api_key == "search-secret"
+    assert "search_api_key" not in config.options
+    assert "search-secret" not in repr(config)
+
+
+def test_search_api_key_is_optional():
+    """Meilisearch mints tenant tokens from the write key."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={"default": {"engine": "meilisearch"}},
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+    ):
+        assert get_backend_config().search_api_key is None
+
+
+def test_invalid_search_api_key_raises():
+    """An empty search key is a configuration error, not a silent None."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={"default": {"engine": "typesense", "search_api_key": ""}},
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+    ):
+        with pytest.raises(BackendNotFound):
+            get_backend_config()
+
+
 def test_non_mapping_backends_raise():
     """The backends setting must be a mapping."""
     with override_settings(OPENEDX_SEARCH_BACKENDS="not-a-mapping", OPENEDX_SEARCH_DEFAULT_BACKEND="default"):

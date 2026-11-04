@@ -99,13 +99,24 @@ The engine is a deployment choice, configured once per deployment:
 
     OPENEDX_SEARCH_BACKENDS = {
         "default": {"engine": "meilisearch", "url": "...", "api_key": "..."},
-        "typesense": {"engine": "typesense", "url": "...", "api_key": "..."},
+        "typesense": {
+            "engine": "typesense",
+            "url": "...",
+            "api_key": "...",
+            "search_api_key": "...",
+        },
     }
     OPENEDX_SEARCH_DEFAULT_BACKEND = "default"
     OPENEDX_SEARCH_USE_CASE_BACKENDS = {"forum": "typesense"}  # optional
 
 Resolution is per use case: override, then deployment default, then an error.
 The library ships no default engine.
+
+``api_key`` is the key the adapter uses for writes. ``search_api_key`` is the
+parent key for minting scoped search credentials, and Typesense requires it:
+the parent of a scoped key must allow only ``documents:search``, so the write key
+cannot mint one. Meilisearch mints tenant tokens from ``api_key`` and can omit
+it.
 
 Registrations are loaded by the consumer from its own ``AppConfig.ready()``.
 The library does not scan packages or import registration modules.

@@ -33,14 +33,21 @@ Deployments choose the engine in configuration, not in the registration:
 
     OPENEDX_SEARCH_BACKENDS = {
         "default": {"engine": "meilisearch", "url": "http://...", "api_key": "..."},
-        "typesense": {"engine": "typesense", "url": "http://...", "api_key": "..."},
+        "typesense": {
+            "engine": "typesense",
+            "url": "http://...",
+            "api_key": "...",
+            "search_api_key": "...",
+        },
     }
     OPENEDX_SEARCH_DEFAULT_BACKEND = "default"
     OPENEDX_SEARCH_USE_CASE_BACKENDS = {"forum": "typesense"}  # optional
 
 ``get_backend_config(use_case)`` resolves the override first, then the default,
 and raises ``BackendNotConfigured`` when neither is set. The library ships no
-default engine on purpose.
+default engine on purpose. ``search_api_key`` is the parent key for scoped
+search credentials; Typesense requires it because the parent of a scoped key must
+allow only ``documents:search``, so ``api_key`` cannot mint one.
 
 Loading registrations
 *********************
