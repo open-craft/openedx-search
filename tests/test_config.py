@@ -58,6 +58,27 @@ def test_unknown_backend_raises():
             get_backend_config()
 
 
+def test_non_string_use_case_backend_raises():
+    """A non-string override is a configuration error, not a TypeError."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={"default": MEILISEARCH},
+        OPENEDX_SEARCH_DEFAULT_BACKEND="default",
+        OPENEDX_SEARCH_USE_CASE_BACKENDS={"forum": ["typesense"]},
+    ):
+        with pytest.raises(BackendNotFound):
+            get_backend_config("forum")
+
+
+def test_non_string_default_backend_raises():
+    """A non-string default is a configuration error, not a TypeError."""
+    with override_settings(
+        OPENEDX_SEARCH_BACKENDS={"default": MEILISEARCH},
+        OPENEDX_SEARCH_DEFAULT_BACKEND=["default"],
+    ):
+        with pytest.raises(BackendNotFound):
+            get_backend_config()
+
+
 def test_backend_without_engine_raises():
     """A backend entry needs an engine."""
     with override_settings(

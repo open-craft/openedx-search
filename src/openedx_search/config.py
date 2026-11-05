@@ -86,9 +86,17 @@ def get_backend_config(use_case: str | None = None) -> BackendConfig:
     if not isinstance(overrides, Mapping):
         raise BackendNotConfigured("OPENEDX_SEARCH_USE_CASE_BACKENDS must be a mapping")
 
-    name = overrides.get(use_case) if use_case else None
-    if not name:
-        name = getattr(settings, "OPENEDX_SEARCH_DEFAULT_BACKEND", None)
+    override = overrides.get(use_case) if use_case else None
+    if override is not None and not isinstance(override, str):
+        raise BackendNotFound(
+            f"Search backend override for {use_case!r} must be a backend name"
+        )
+
+    default_name = getattr(settings, "OPENEDX_SEARCH_DEFAULT_BACKEND", None)
+    if default_name is not None and not isinstance(default_name, str):
+        raise BackendNotFound("OPENEDX_SEARCH_DEFAULT_BACKEND must be a backend name")
+
+    name = override or default_name
     if not name:
         raise BackendNotConfigured(
             "No search backend is configured. Set OPENEDX_SEARCH_DEFAULT_BACKEND "
