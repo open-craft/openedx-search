@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
-from .schema import DOCUMENT_ID_PATTERN, Field, FieldType, IndexSchema
+from .schema import Field, FieldType, IndexSchema, validate_document_id
 
 __all__ = ["DocumentError", "validate_document", "validate_documents"]
 
@@ -60,6 +60,8 @@ def _validate_object(
         if not isinstance(key, str):
             raise DocumentError(f"{label}: field names must be strings")
         full_name = f"{prefix}{key}"
+        if "." in key and not free_form:
+            raise DocumentError(f"{label}: unknown field {full_name!r}")
         field = by_name.get(full_name)
         if field is None:
             if free_form:
@@ -71,9 +73,10 @@ def _validate_object(
 
     _validate_required(by_name, obj, prefix=prefix, parent_name=parent_name, label=label)
     if prefix == "":
-        doc_id = obj.get("id")
-        if not isinstance(doc_id, str) or not DOCUMENT_ID_PATTERN.match(doc_id):
-            raise DocumentError(f"{label}: invalid document id {doc_id!r}")
+        try:
+            validate_document_id(obj.get("id"))
+        except ValueError as exc:
+            raise DocumentError(f"{label}: {exc}") from exc
 
 
 def _validate_required(
