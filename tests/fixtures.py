@@ -67,8 +67,8 @@ STUDIO_COURSE_SCHEMA = IndexSchema(
         Field("org", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True, facetable=True)),
         Field("access_id", FieldType.INT64, required=True, capabilities=Capabilities(filterable=True)),
         Field("breadcrumbs", FieldType.OBJECT, array=True, required=True),
-        Field("breadcrumbs.display_name", FieldType.STRING),
-        Field("breadcrumbs.usage_key", FieldType.STRING, capabilities=Capabilities(filterable=True)),
+        Field("breadcrumbs.display_name", FieldType.STRING, array=True),
+        Field("breadcrumbs.usage_key", FieldType.STRING, array=True, capabilities=Capabilities(filterable=True)),
         Field(
             "tags",
             FieldType.OBJECT,
@@ -145,8 +145,8 @@ STUDIO_LIBRARY_SCHEMA = IndexSchema(
         Field("publish_status", FieldType.STRING, capabilities=Capabilities(filterable=True, facetable=True)),
         Field("num_children", FieldType.INT32),
         Field("breadcrumbs", FieldType.OBJECT, array=True, required=True),
-        Field("breadcrumbs.display_name", FieldType.STRING),
-        Field("breadcrumbs.usage_key", FieldType.STRING, capabilities=Capabilities(filterable=True)),
+        Field("breadcrumbs.display_name", FieldType.STRING, array=True),
+        Field("breadcrumbs.usage_key", FieldType.STRING, array=True, capabilities=Capabilities(filterable=True)),
         Field(
             "tags",
             FieldType.OBJECT,

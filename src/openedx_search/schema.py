@@ -201,6 +201,21 @@ def _validate_parent_paths(by_name: dict[str, Field]) -> None:
         _require(parent.type is FieldType.OBJECT, f"parent field {parent_name!r} must be an object")
 
 
+def _validate_array_object_children(by_name: dict[str, Field]) -> None:
+    """Require a field inside an object array to be an array itself."""
+    for name, entry in by_name.items():
+        parent_name = name.rsplit(".", 1)[0] if "." in name else None
+        while parent_name is not None:
+            parent = by_name[parent_name]
+            if parent.type is FieldType.OBJECT and parent.array:
+                _require(
+                    entry.array,
+                    f"field {name!r} is inside object array {parent_name!r} and must be an array",
+                )
+                break
+            parent_name = parent_name.rsplit(".", 1)[0] if "." in parent_name else None
+
+
 def _validate_searchable_objects(by_name: dict[str, Field]) -> None:
     """Reject searchable objects whose declared leaves are not strings."""
     for entry in by_name.values():
@@ -249,6 +264,7 @@ class IndexSchema:
 
         _validate_id(by_name)
         _validate_parent_paths(by_name)
+        _validate_array_object_children(by_name)
         _validate_searchable_objects(by_name)
 
     def field(self, name: str) -> Field:

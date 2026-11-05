@@ -155,7 +155,11 @@ A schema passes two checks, at different times. The first needs no engine and no
 settings: the neutral model rejects declarations that no supported engine can
 represent, and it does so when ``IndexSchema`` is constructed, before any
 registration exists. A ``searchable`` field must be a string or an object whose
-leaves are strings, and an array field cannot be ``sortable``.
+leaves are strings, and an array field cannot be ``sortable``. A field inside an
+object array is itself an array, because Typesense requires array types there: a
+declaration whose ancestor chain includes an ``array`` object must set
+``array``, and since arrays cannot be ``sortable``, a sortable leaf under an
+object array is rejected.
 
 The second is ``Adapter.validate_schema()``, which covers what the first cannot:
 capabilities the neutral model allows but this particular adapter cannot

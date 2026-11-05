@@ -280,6 +280,32 @@ def test_array_field_cannot_be_sortable():
         )
 
 
+def test_object_array_children_must_be_arrays():
+    """Typesense requires array types inside an object array."""
+    with pytest.raises(SchemaError, match="must be an array"):
+        IndexSchema(
+            name="bad_object_array",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("items", FieldType.OBJECT, array=True),
+                Field("items.price", FieldType.INT32, capabilities=Capabilities(sortable=True)),
+            ),
+        )
+
+
+def test_object_array_children_can_be_arrays():
+    """An array leaf inside an object array is valid."""
+    schema = IndexSchema(
+        name="object_array",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("items", FieldType.OBJECT, array=True),
+            Field("items.price", FieldType.INT32, array=True),
+        ),
+    )
+    assert schema.field("items.price").array is True
+
+
 def test_additional_properties_requires_object():
     """Only object fields can be free-form."""
     with pytest.raises(SchemaError, match="additional_properties requires an object"):
