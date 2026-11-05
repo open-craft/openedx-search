@@ -97,6 +97,15 @@ def test_unknown_nested_field_is_rejected():
         validate_document(SCHEMA, _document(details={"name": "x", "extra": "y"}))
 
 
+def test_dotted_document_key_is_rejected():
+    """A flat key with a dot is not a nested document field."""
+    with pytest.raises(DocumentError, match="unknown field 'content.problem_types'"):
+        validate_document(
+            SCHEMA,
+            _document(**{"content.problem_types": ["multiple_choice"]}),
+        )
+
+
 def test_wrong_scalar_type():
     """Declared types are enforced."""
     with pytest.raises(DocumentError, match="must be a string"):
