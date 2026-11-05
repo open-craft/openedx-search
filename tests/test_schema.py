@@ -11,6 +11,7 @@ from openedx_search.schema import (
     SchemaError,
     Searchable,
     document_id_from_key,
+    validate_document_id,
 )
 from tests.fixtures import STUDIO_COURSE_SCHEMA, STUDIO_LIBRARY_SCHEMA
 
@@ -48,6 +49,23 @@ def test_document_id_rejects_an_empty_key():
     """An empty key has no id."""
     with pytest.raises(ValueError, match="non-empty"):
         document_id_from_key("")
+
+
+def test_validate_document_id_accepts_an_engine_safe_id():
+    """A valid id is returned unchanged."""
+    assert validate_document_id("block-v1-edx-demo") == "block-v1-edx-demo"
+
+
+def test_validate_document_id_rejects_a_colon():
+    """The engines reject a colon in an id."""
+    with pytest.raises(ValueError, match="invalid document id"):
+        validate_document_id("block-v1:edX+DemoX")
+
+
+def test_validate_document_id_rejects_non_strings():
+    """Ids are strings, not integers or other objects."""
+    with pytest.raises(ValueError, match="invalid document id"):
+        validate_document_id(1)
 
 
 def test_library_schema_is_valid():

@@ -27,6 +27,7 @@ __all__ = [
     "SchemaError",
     "Searchable",
     "document_id_from_key",
+    "validate_document_id",
 ]
 
 INDEX_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+\Z")
@@ -47,6 +48,13 @@ def document_id_from_key(key: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
     suffix = blake2b(key.encode(), digest_size=8, usedforsecurity=False).hexdigest()
     return f"{slug}-{suffix}" if slug else suffix
+
+
+def validate_document_id(value: object) -> str:
+    """Return ``value`` when it is an engine-safe id, or raise ``ValueError``."""
+    if not isinstance(value, str) or not DOCUMENT_ID_PATTERN.match(value):
+        raise ValueError(f"invalid document id {value!r}")
+    return value
 
 
 class SchemaError(ValueError):
