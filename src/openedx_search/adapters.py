@@ -17,7 +17,7 @@ from typing import Any, TypeAlias
 
 from .config import BackendConfig
 from .registry import UseCaseRegistration
-from .schema import FIELD_NAME_PATTERN, IndexSchema
+from .schema import FIELD_NAME_PATTERN, INDEX_NAME_PATTERN, IndexSchema
 
 __all__ = [
     "Adapter",
@@ -164,18 +164,26 @@ class SearchCredential:
 @dataclass(frozen=True)
 class RebuildTarget:
     """
-    A rebuild target created by ``begin_rebuild``.
+    A rebuild target minted by the library for ``begin_rebuild``.
 
-    ``generation`` is unique to one rebuild and is not the schema version. The
-    adapter derives the target name from ``name``, so a second rebuild at the
-    same version never derives the live index's name. That matters on Typesense,
-    where the alias points at a collection named for the index and version and a
-    collection cannot be renamed.
+    ``generation`` is unique to one rebuild and is not the schema version, so a
+    second rebuild at the same version never derives the live index's name. That
+    matters on Typesense, where the alias points at a collection named for the
+    index and version and a collection cannot be renamed.
     """
 
     index: str
     version: int
     generation: str
+
+    def __post_init__(self) -> None:
+        """Validate the parts the engines require in a collection or index name."""
+        if not isinstance(self.index, str) or not INDEX_NAME_PATTERN.match(self.index):
+            raise ValueError(f"invalid rebuild index {self.index!r}")
+        if not isinstance(self.version, int) or isinstance(self.version, bool) or self.version < 1:
+            raise ValueError("rebuild version must be an integer >= 1")
+        if not isinstance(self.generation, str) or not INDEX_NAME_PATTERN.match(self.generation):
+            raise ValueError(f"invalid rebuild generation {self.generation!r}")
 
     @property
     def name(self) -> str:

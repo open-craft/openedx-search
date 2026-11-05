@@ -90,6 +90,22 @@ def test_rebuild_target_name_includes_a_generation():
     assert first.name != second.name
 
 
+@pytest.mark.parametrize(
+    ("index", "version", "generation"),
+    [
+        ("studio content", 2, "20261104"),
+        ("studio_content", 0, "20261104"),
+        ("studio_content", True, "20261104"),
+        ("studio_content", 2, ""),
+        ("studio_content", 2, "2026-11-04T10:00"),
+    ],
+)
+def test_rebuild_target_rejects_invalid_parts(index, version, generation):
+    """A bad part would render an index name the engine rejects."""
+    with pytest.raises(ValueError):
+        RebuildTarget(index=index, version=version, generation=generation)
+
+
 def test_search_credential_carries_browser_fields():
     """The browser needs the public URL, the physical index and the key."""
     credential = SearchCredential(
