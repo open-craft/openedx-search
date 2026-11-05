@@ -2,11 +2,9 @@
 Consumer-facing API for openedx-search.
 
 ADR 0002, Decision 4: consumers use this module rather than talking to an
-adapter. The functions resolve the registration and backend internally. The
-registry helpers in ``openedx_search.registry`` are not part of this surface.
-
-These functions are currently signatures and contracts only; the
-implementations land with the engine adapters.
+adapter. The functions resolve the registration, validate the input and delegate
+to the adapter for the configured backend. The registry helpers in
+``openedx_search.registry`` are not part of this surface.
 """
 
 from __future__ import annotations
@@ -25,11 +23,16 @@ from .adapters import (
     SearchCredential,
     SearchResult,
     WriteReceipt,
+    get_adapter,
+    normalize_filter_expression,
 )
+from .documents import DocumentError, validate_documents
+from .registry import get_registration
 from .schema import document_id_from_key, validate_document_id
 
 __all__ = [
     "CredentialScope",
+    "DocumentError",
     "DocumentSource",
     "RebuildInProgress",
     "RebuildResult",
@@ -62,18 +65,20 @@ def upsert(use_case: str, documents: DocumentBatch) -> WriteReceipt:
     """
     Submit one bounded batch of documents for upsert.
 
-    ``documents`` is a sequence, not a one-shot iterator, because a same-version
-    reindex in progress submits the same batch to both the live index and the
-    target. The returned receipt covers the live index; the reindex confirms the
-    target's copy before it swaps.
+    ``documents`` is a sequence, not a one-shot iterator. Every document is
+    validated against the registration's schema before it reaches the adapter,
+    so both engines accept and reject the same documents.
 
-    During a same-version reindex the batch is also submitted to the rebuild
-    target. A failure in either submission is raised to the caller. The caller
-    may retry with the same batch, since the operation is an upsert. A target
-    with a different schema version is a migration, whose writers are stopped;
-    submitting to it raises ``SchemaVersionMismatch``.
+    The rebuild target dual-write lands with the rebuild lifecycle. Until then
+    the batch is submitted to the live index only.
     """
-    raise NotImplementedError("upsert is implemented with the engine adapters")
+    registration = get_registration(use_case)
+    if isinstance(documents, (str, bytes)) or not isinstance(documents, Sequence):
+        raise ValueError("documents must be a sequence of mappings")
+    if not documents:
+        raise ValueError("documents must not be empty")
+    validate_documents(registration.schema, documents)
+    return get_adapter(registration).upsert(documents)
 
 
 def _normalize_primary_keys(
@@ -105,11 +110,19 @@ def delete(
     filter expression used by search, never a raw engine string.
 
     Exactly one of ``primary_keys`` and ``filter`` is required, and neither may
-    be empty, so a bare call cannot empty an index. During a same-version
-    reindex the delete is also submitted to the target; a target with a
-    different version raises ``SchemaVersionMismatch``.
+    be empty, so a bare call cannot empty an index. The rebuild target
+    dual-write lands with the rebuild lifecycle.
     """
-    raise NotImplementedError("delete is implemented with the engine adapters")
+    registration = get_registration(use_case)
+    keys = _normalize_primary_keys(primary_keys)
+    expression = (
+        None
+        if filter is None
+        else normalize_filter_expression(filter, raise_if_empty=True)
+    )
+    if (keys is None) == (expression is None):
+        raise ValueError("exactly one of primary_keys and filter is required")
+    return get_adapter(registration).delete(primary_keys=keys, filter=expression)
 
 
 def check_write(use_case: str, receipt: WriteReceipt) -> WriteReceipt:

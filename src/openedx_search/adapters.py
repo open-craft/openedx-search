@@ -117,6 +117,31 @@ class FilterGroup:
 FilterExpression: TypeAlias = tuple[FilterGroup, ...]
 
 
+def normalize_filter_expression(
+    filters: FilterExpression,
+    *,
+    raise_if_empty: bool = False,
+) -> tuple[FilterGroup, ...]:
+    """
+    Validate and freeze a sequence of ``FilterGroup`` values.
+
+    Raises ``ValueError`` for a string, a non-sequence or a non-group item, and
+    for an empty sequence when ``raise_if_empty`` is true.
+    """
+    if isinstance(filters, (str, bytes)):
+        raise ValueError("filters must be a sequence of FilterGroup, not a string")
+    try:
+        groups = tuple(filters)
+    except TypeError as exc:
+        raise ValueError("filters must be a sequence of FilterGroup") from exc
+    if not groups and raise_if_empty:
+        raise ValueError("filters must not be empty")
+    for group in groups:
+        if not isinstance(group, FilterGroup):
+            raise ValueError("filters must contain FilterGroup instances")
+    return groups
+
+
 @dataclass(frozen=True)
 class CredentialScope:
     """Tenant filters for a scoped frontend credential."""
@@ -125,13 +150,7 @@ class CredentialScope:
 
     def __post_init__(self) -> None:
         """Validate and freeze the filter groups."""
-        if isinstance(self.filters, (str, bytes)):
-            raise ValueError("filters must be a sequence of FilterGroup, not a string")
-        filters = tuple(self.filters)
-        for group in filters:
-            if not isinstance(group, FilterGroup):
-                raise ValueError("filters must contain FilterGroup instances")
-        object.__setattr__(self, "filters", filters)
+        object.__setattr__(self, "filters", normalize_filter_expression(self.filters))
 
 
 @dataclass(frozen=True)
