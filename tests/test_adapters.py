@@ -14,6 +14,7 @@ from openedx_search.adapters import (
     SearchCredential,
     SearchResult,
     WriteReceipt,
+    normalize_filter_expression,
 )
 from openedx_search.config import BackendConfig
 from tests.fixtures import STUDIO_COURSE
@@ -146,6 +147,17 @@ def test_credential_scope_requires_filter_groups():
     """The scope holds FilterGroup values, not terms or strings."""
     with pytest.raises(ValueError, match="FilterGroup"):
         CredentialScope(filters=("org",))  # type: ignore[arg-type]
+
+
+def test_normalize_filter_expression_allows_empty_by_default():
+    """A credential scope can have no tenant filters."""
+    assert normalize_filter_expression(()) == ()
+
+
+def test_normalize_filter_expression_can_require_a_group():
+    """A delete filter may not be empty."""
+    with pytest.raises(ValueError, match="not be empty"):
+        normalize_filter_expression((), raise_if_empty=True)
 
 
 def test_rebuild_target_name_includes_a_generation():
