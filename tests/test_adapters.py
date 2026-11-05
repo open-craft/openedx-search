@@ -1,5 +1,7 @@
 """Tests for the adapter contract types."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, RebuildTarget, SearchCredential
@@ -122,3 +124,28 @@ def test_filter_term_rejects_a_non_sequence():
 def test_filter_term_keeps_a_value_sequence():
     """A tuple is the supported form."""
     assert FilterTerm("org", ("openedx",)).values == ("openedx",)
+
+
+def test_filter_term_accepts_bool_and_float():
+    """Boolean and numeric fields are filterable, and datetimes are floats."""
+    term = FilterTerm("last_published", (1680674828.0, True))
+    assert term.values == (1680674828.0, True)
+
+
+def test_filter_term_keeps_an_aware_datetime():
+    """Rendering converts a datetime to POSIX seconds, where the field type is known."""
+    moment = datetime(2023, 4, 5, 6, 7, 8, tzinfo=timezone.utc)
+    term = FilterTerm("last_published", (moment,))
+    assert term.values == (moment,)
+
+
+def test_filter_term_rejects_a_naive_datetime():
+    """A naive datetime would use the local timezone, which is ambiguous."""
+    with pytest.raises(ValueError, match="timezone-aware"):
+        FilterTerm("last_published", (datetime(2023, 4, 5, 6, 7, 8),))
+
+
+def test_filter_term_rejects_none():
+    """Documents carry no nulls, so a null filter value has no meaning."""
+    with pytest.raises(ValueError, match="invalid filter value"):
+        FilterTerm("last_published", (None,))

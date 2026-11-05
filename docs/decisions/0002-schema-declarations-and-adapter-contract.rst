@@ -64,8 +64,9 @@ custom ranking are absent until a consumer needs them. Course Discovery will
 bring geo, custom ranking, unordered search and nested skills; the Typesense
 adapter will bring nested fields and per-field flags.
 
-``datetime`` is a logical type: values are POSIX timestamps in seconds (UTC),
-stored as numbers, because neither engine has a native date type.
+``datetime`` is a logical type: values are timezone-aware ``datetime`` objects,
+rendered as POSIX seconds (UTC) by the adapter, because neither engine has a
+native date type.
 
 Adapters render ``IndexSchema`` when they create or reconcile an index. There is
 no second authored schema. A derived projection may exist internally, but it is
@@ -214,7 +215,8 @@ A document is valid when:
   validates the id and does not rewrite the document;
 * every declared field that is present has the declared type and shape, and an
   array field is an array of that type;
-* a ``datetime`` value is POSIX seconds, which is how the engines store it;
+* a ``datetime`` value is accepted for a ``DATETIME`` field and rendered as
+  POSIX seconds, which is how the engines store it;
 * a nested object follows the same rules for its declared leaves. Under
   ``additional_properties`` any key is accepted, and its value must be a string;
 * every field in the document is declared in the schema.
@@ -330,7 +332,12 @@ Filters are exact matches. ``FilterExpression`` is a sequence of
 values combined with OR. Studio's tenant filter is one group with ``org IN
 [...]`` and ``access_id IN [...]``: the fields are alternatives, not
 requirements. Adapters render the expression in their own syntax, and raw engine
-filters never cross the API. The model covers exact matches combined with AND and
+filters never cross the API. Values are strings, integers, floats, booleans or a
+timezone-aware ``datetime``. A datetime is rendered as POSIX seconds, the same
+type documents accept. ``None`` is not a value: documents carry no nulls, and
+"field is absent"
+is a separate operator with its own engine syntax. The model covers exact
+matches combined with AND and
 OR. Negation, ranges and field-to-field comparisons are out of scope until a
 consumer needs one; adding it extends ``FilterTerm`` rather than the expression
 shape.

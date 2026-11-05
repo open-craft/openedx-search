@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, TypeAlias
 
 from .config import BackendConfig
@@ -28,6 +28,7 @@ __all__ = [
     "FilterExpression",
     "FilterGroup",
     "FilterTerm",
+    "FilterValue",
     "PrimaryKey",
     "RebuildTarget",
     "ReconcileResult",
@@ -41,6 +42,7 @@ __all__ = [
 Document: TypeAlias = Mapping[str, Any]
 DocumentBatch: TypeAlias = Sequence[Document]
 PrimaryKey: TypeAlias = str
+FilterValue: TypeAlias = str | int | float | bool | datetime
 
 
 class AdapterError(RuntimeError):
@@ -60,7 +62,7 @@ class FilterTerm:
     """One exact-match filter clause."""
 
     field: str
-    values: tuple[str | int, ...]
+    values: tuple[FilterValue, ...]
 
     def __post_init__(self) -> None:
         """Validate the field path and the filter values."""
@@ -74,11 +76,16 @@ class FilterTerm:
             raise ValueError("filter values must be a sequence") from exc
         if not values:
             raise ValueError("a filter term needs at least one value")
+
         for value in values:
-            if isinstance(value, bool) or not isinstance(value, (str, int)):
+            if isinstance(value, datetime):
+                if value.tzinfo is None or value.utcoffset() is None:
+                    raise ValueError("datetime filter values must be timezone-aware")
+            elif isinstance(value, str):
+                if not value:
+                    raise ValueError("filter values must not be empty")
+            elif not isinstance(value, (bool, int, float)):
                 raise ValueError(f"invalid filter value {value!r}")
-            if isinstance(value, str) and not value:
-                raise ValueError("filter values must not be empty")
         object.__setattr__(self, "values", values)
 
 
