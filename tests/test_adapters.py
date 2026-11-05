@@ -115,6 +115,18 @@ def test_filter_term_rejects_a_bare_string():
         FilterTerm("org", "openedx")
 
 
+def test_filter_term_rejects_bytes():
+    """Bytes would be split into integers, silently changing the filter."""
+    with pytest.raises(ValueError, match="not a string"):
+        FilterTerm("org", b"openedx")
+
+
+def test_filter_term_rejects_a_mapping():
+    """A mapping would be split into its keys."""
+    with pytest.raises(ValueError, match="not a mapping"):
+        FilterTerm("org", {"openedx": 1})
+
+
 def test_filter_term_rejects_a_non_sequence():
     """A scalar is not a list of values."""
     with pytest.raises(ValueError, match="must be a sequence"):

@@ -68,8 +68,10 @@ class FilterTerm:
         """Validate the field path and the filter values."""
         if not isinstance(self.field, str) or not FIELD_NAME_PATTERN.match(self.field):
             raise ValueError(f"invalid filter field {self.field!r}")
-        if isinstance(self.values, str):
+        if isinstance(self.values, (str, bytes)):
             raise ValueError("filter values must be a sequence, not a string")
+        if isinstance(self.values, Mapping):
+            raise ValueError("filter values must be a sequence, not a mapping")
         try:
             values = tuple(self.values)
         except TypeError as exc:
