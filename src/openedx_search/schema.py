@@ -54,12 +54,7 @@ class SchemaError(ValueError):
 
 
 class FieldType(StrEnum):
-    """
-    Document field types shared by the current consumers.
-
-    ``UNKNOWN`` is for fields parsed from engines that do not store types,
-    such as Meilisearch and Algolia.
-    """
+    """Document field types shared by the current consumers."""
 
     STRING = "string"
     INT32 = "int32"
@@ -68,7 +63,6 @@ class FieldType(StrEnum):
     BOOL = "bool"
     DATETIME = "datetime"
     OBJECT = "object"
-    UNKNOWN = "unknown"
 
 
 def _require(condition: bool, message: str) -> None:

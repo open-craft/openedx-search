@@ -37,7 +37,7 @@ There is one authored declaration, ``IndexSchema``:
 
 * identity: ``name`` and ``version``;
 * ``fields``: a name, one of ``string``/``int32``/``int64``/``float``/``bool``/
-  ``datetime``/``object``/``unknown``, ``array``,
+  ``datetime``/``object``, ``array``,
   ``additional_properties`` and the capabilities;
 * four capabilities: ``searchable`` (with ``order``), ``filterable``,
   ``facetable`` and ``sortable``.

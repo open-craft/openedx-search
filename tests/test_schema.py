@@ -391,19 +391,6 @@ def test_field_lookup_by_name():
         STUDIO_COURSE_SCHEMA.field("not_a_field")
 
 
-def test_unknown_field_type_is_allowed():
-    """Fields parsed from untyped engines keep an explicit unknown type."""
-    entry = Field("mystery", FieldType.UNKNOWN)
-    assert entry.type is FieldType.UNKNOWN
-
-    sortable = Field(
-        "mystery",
-        FieldType.UNKNOWN,
-        capabilities=Capabilities(sortable=True),
-    )
-    assert sortable.capabilities.sortable is True
-
-
 def test_schema_fields_reject_a_bare_string():
     """A string would be split into characters, one per field."""
     with pytest.raises(SchemaError, match="not a string"):
