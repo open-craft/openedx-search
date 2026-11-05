@@ -33,3 +33,15 @@ def test_normalize_empty_primary_keys():
 def test_normalize_missing_primary_keys():
     """None means the caller used the filter form."""
     assert _normalize_primary_keys(None) is None
+
+
+def test_normalize_rejects_invalid_document_id():
+    """A colon fails the engines, so it fails before the adapter call."""
+    with pytest.raises(ValueError, match="invalid document id"):
+        _normalize_primary_keys("block-v1:edX+DemoX+type@html+block@abc")
+
+
+def test_normalize_rejects_invalid_document_id_in_sequence():
+    """Every key in a batch is validated."""
+    with pytest.raises(ValueError, match="invalid document id"):
+        _normalize_primary_keys(["valid-id", "block-v1:edX+DemoX"])

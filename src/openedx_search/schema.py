@@ -16,19 +16,37 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from hashlib import blake2b
 
 __all__ = [
+    "DOCUMENT_ID_PATTERN",
     "Capabilities",
     "Field",
     "FieldType",
     "IndexSchema",
     "SchemaError",
     "Searchable",
+    "document_id_from_key",
 ]
 
 INDEX_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+\Z")
 FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*\Z")
 USE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\Z")
+DOCUMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+\Z")
+
+
+def document_id_from_key(key: str) -> str:
+    """
+    Return an engine-safe document id derived from a consumer key.
+
+    The slug keeps the id readable; the hash suffix keeps it unique when two
+    keys slug to the same value. The result matches ``DOCUMENT_ID_PATTERN``.
+    """
+    if not isinstance(key, str) or not key:
+        raise ValueError("key must be a non-empty string")
+    slug = re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
+    suffix = blake2b(key.encode(), digest_size=8, usedforsecurity=False).hexdigest()
+    return f"{slug}-{suffix}" if slug else suffix
 
 
 class SchemaError(ValueError):

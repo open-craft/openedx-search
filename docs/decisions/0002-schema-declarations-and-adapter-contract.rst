@@ -204,6 +204,10 @@ neither behavior.
 A document is valid when:
 
 * every ``required`` field is present, including the ``id`` the schema requires;
+* the ``id`` value matches ``[A-Za-z0-9_-]+``, the intersection of the two
+  engines. Meilisearch rejects a colon and fails the whole batch, so an opaque
+  key is derived with ``document_id_from_key`` before it is indexed; the library
+  validates the id and does not rewrite the document;
 * every declared field that is present has the declared type and shape, and an
   array field is an array of that type;
 * a ``datetime`` value is POSIX seconds, which is how the engines store it;
@@ -238,7 +242,8 @@ Lossy edges are reported by ``validate_schema`` or ``reconcile``, never dropped.
 ``delete`` takes ``primary_keys`` values of the required string ``id`` field
 (one value or a sequence) or the same abstract filter expression ``search``
 accepts. Exactly one of ``primary_keys`` and ``filter`` is required, and
-neither may be empty, so a bare ``delete()`` cannot empty an index. Both methods
+neither may be empty, so a bare ``delete()`` cannot empty an index. Primary keys
+are checked against the same id rule before they reach the adapter. Both methods
 accept an optional ``target`` so the library can submit to a rebuild target.
 
 ``check_write(receipt)`` performs one status check and returns an updated

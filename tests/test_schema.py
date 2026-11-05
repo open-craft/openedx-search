@@ -2,7 +2,16 @@
 
 import pytest
 
-from openedx_search.schema import Capabilities, Field, FieldType, IndexSchema, SchemaError, Searchable
+from openedx_search.schema import (
+    DOCUMENT_ID_PATTERN,
+    Capabilities,
+    Field,
+    FieldType,
+    IndexSchema,
+    SchemaError,
+    Searchable,
+    document_id_from_key,
+)
 from tests.fixtures import STUDIO_COURSE_SCHEMA, STUDIO_LIBRARY_SCHEMA
 
 
@@ -14,6 +23,31 @@ def test_course_schema_is_valid():
     assert STUDIO_COURSE_SCHEMA.field("tags.level3").capabilities.facetable is True
     assert STUDIO_COURSE_SCHEMA.field("content").additional_properties is True
     assert STUDIO_COURSE_SCHEMA.field("access_id").capabilities.filterable is True
+
+
+def test_document_id_from_key_is_stable():
+    """The derived id keeps a readable slug and a stable hash suffix."""
+    assert document_id_from_key("block-v1:edX+DemoX+type@html+block@abc") == (
+        "block-v1-edx-demox-type-html-block-abc-e1dc33bfca7cc9cb"
+    )
+
+
+def test_document_id_matches_the_pattern():
+    """A derived id is addressable by both engines."""
+    assert DOCUMENT_ID_PATTERN.match(document_id_from_key("course-v1:edX+DemoX+2026"))
+
+
+def test_document_id_falls_back_to_the_hash():
+    """A key with no alphanumeric characters still yields a valid id."""
+    derived = document_id_from_key(":::")
+    assert DOCUMENT_ID_PATTERN.match(derived)
+    assert derived == document_id_from_key(":::")
+
+
+def test_document_id_rejects_an_empty_key():
+    """An empty key has no id."""
+    with pytest.raises(ValueError, match="non-empty"):
+        document_id_from_key("")
 
 
 def test_library_schema_is_valid():

@@ -26,6 +26,7 @@ from .adapters import (
     SearchResult,
     WriteReceipt,
 )
+from .schema import DOCUMENT_ID_PATTERN, document_id_from_key
 
 __all__ = [
     "CredentialScope",
@@ -35,6 +36,7 @@ __all__ = [
     "SearchCredential",
     "check_write",
     "delete",
+    "document_id_from_key",
     "mint_credential",
     "rebuild",
     "search",
@@ -74,6 +76,13 @@ def upsert(use_case: str, documents: DocumentBatch) -> WriteReceipt:
     raise NotImplementedError("upsert is implemented with the engine adapters")
 
 
+def _validate_document_id(value: PrimaryKey) -> PrimaryKey:
+    """Reject an id the engines cannot address."""
+    if not isinstance(value, str) or not DOCUMENT_ID_PATTERN.match(value):
+        raise ValueError(f"invalid document id {value!r}")
+    return value
+
+
 def _normalize_primary_keys(
     primary_keys: PrimaryKey | Sequence[PrimaryKey] | None,
 ) -> tuple[PrimaryKey, ...] | None:
@@ -81,11 +90,11 @@ def _normalize_primary_keys(
     if primary_keys is None:
         return None
     if isinstance(primary_keys, str):
-        return (primary_keys,)
+        return (_validate_document_id(primary_keys),)
     keys = tuple(primary_keys)
     if not keys:
         raise ValueError("primary_keys must not be empty")
-    return keys
+    return tuple(_validate_document_id(key) for key in keys)
 
 
 def delete(
