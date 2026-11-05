@@ -9,19 +9,22 @@ class exists so an engine contribution has one place to see the full surface.
 
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, TypeAlias
 
-from .config import BackendConfig
+from .config import BackendConfig, get_backend_config
 from .registry import UseCaseRegistration
 from .schema import FIELD_NAME_PATTERN, IndexSchema
 
 __all__ = [
     "Adapter",
     "AdapterError",
+    "AdapterFactory",
+    "AdapterNotRegistered",
     "CredentialScope",
     "Document",
     "DocumentBatch",
@@ -37,6 +40,9 @@ __all__ = [
     "UnsupportedSchema",
     "WriteFailed",
     "WriteReceipt",
+    "clear_adapter_registry",
+    "get_adapter",
+    "register_adapter",
 ]
 
 Document: TypeAlias = Mapping[str, Any]
@@ -281,3 +287,55 @@ class Adapter(ABC):
     @abstractmethod
     def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:
         """Mint a scoped, expiring credential and the endpoint to use it against."""
+
+
+AdapterFactory: TypeAlias = Callable[[UseCaseRegistration, BackendConfig], Adapter]
+
+_adapter_factories: dict[str, AdapterFactory] = {}
+_adapter_lock = threading.RLock()
+
+
+class AdapterNotRegistered(AdapterError):
+    """No adapter is registered for the backend's engine."""
+
+
+def register_adapter(engine: str, factory: AdapterFactory, *, replace: bool = False) -> None:
+    """
+    Register the adapter factory for an engine.
+
+    Raises ``ValueError`` when the engine already has a factory, unless
+    ``replace`` is true.
+    """
+    if not isinstance(engine, str) or not engine:
+        raise ValueError("engine must be a non-empty string")
+    if not callable(factory):
+        raise ValueError("factory must be callable")
+    with _adapter_lock:
+        if engine in _adapter_factories and not replace:
+            raise ValueError(f"an adapter is already registered for engine {engine!r}")
+        _adapter_factories[engine] = factory
+
+
+def get_adapter(
+    registration: UseCaseRegistration,
+    backend: BackendConfig | None = None,
+) -> Adapter:
+    """
+    Build the adapter for a registration and its resolved backend.
+
+    Raises ``AdapterNotRegistered`` when the backend's engine has no factory.
+    """
+    backend = backend or get_backend_config(registration.use_case)
+    factory = _adapter_factories.get(backend.engine)
+    if factory is None:
+        raise AdapterNotRegistered(
+            f"no adapter is registered for engine {backend.engine!r}; "
+            "register one with register_adapter()"
+        )
+    return factory(registration, backend)
+
+
+def clear_adapter_registry() -> None:
+    """Remove every adapter factory. Intended for tests and process shutdown."""
+    with _adapter_lock:
+        _adapter_factories.clear()
