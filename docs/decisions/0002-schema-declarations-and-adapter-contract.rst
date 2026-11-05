@@ -44,7 +44,13 @@ There is one authored declaration, ``IndexSchema``:
 
 The primary key is the required string field ``id``, which both Meilisearch and
 Typesense use as the document identifier. A schema that omits ``id`` or declares
-it as anything other than a required, non-array string is rejected.
+it as anything other than a required, non-array string is rejected. The field
+cannot be ``searchable``, ``facetable`` or ``sortable``: if an ``id`` field is
+sent, Typesense ignores it and only logs a warning, so those capabilities would
+be dropped. The Typesense adapter omits ``id`` from the rendered ``fields``,
+because Typesense reserves the name and always has an implicit primary key; the
+neutral schema still declares it. Meilisearch uses the declared ``id`` as
+``primaryKey``.
 
 Sort precedence is fixed, not declared: an explicit sort always outranks keyword
 relevance, and relevance applies only when the caller asks for it. Meilisearch

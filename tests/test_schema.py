@@ -263,6 +263,34 @@ def test_id_field_cannot_be_an_array():
         )
 
 
+@pytest.mark.parametrize(
+    ("capabilities", "message"),
+    [
+        (Capabilities(searchable=True), "cannot be searchable"),
+        (Capabilities(facetable=True), "cannot be facetable"),
+        (Capabilities(sortable=True), "cannot be sortable"),
+    ],
+)
+def test_id_field_rejects_indexing_capabilities(capabilities, message):
+    """Typesense ignores the declared id field, so these would be dropped."""
+    with pytest.raises(SchemaError, match=message):
+        IndexSchema(
+            name="bad_id",
+            fields=(Field("id", FieldType.STRING, required=True, capabilities=capabilities),),
+        )
+
+
+def test_id_field_can_be_filterable():
+    """Filtering by id is useful and supported."""
+    schema = IndexSchema(
+        name="filterable_id",
+        fields=(
+            Field("id", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
+        ),
+    )
+    assert schema.field("id").capabilities.filterable is True
+
+
 def test_object_field_cannot_be_sortable():
     """Object fields have no sortable representation."""
     with pytest.raises(SchemaError, match="cannot be sortable"):

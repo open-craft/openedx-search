@@ -188,6 +188,9 @@ def _validate_id(by_name: dict[str, Field]) -> None:
     _require(id_field.type is FieldType.STRING, "field 'id' must be a string")
     _require(id_field.required, "field 'id' must be required")
     _require(not id_field.array, "field 'id' cannot be an array")
+    _require(not id_field.capabilities.searchable, "field 'id' cannot be searchable")
+    _require(not id_field.capabilities.facetable, "field 'id' cannot be facetable")
+    _require(not id_field.capabilities.sortable, "field 'id' cannot be sortable")
 
 
 def _validate_parent_paths(by_name: dict[str, Field]) -> None:
