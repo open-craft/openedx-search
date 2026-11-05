@@ -272,7 +272,10 @@ accept an optional ``target`` so the library can submit to a rebuild target.
 receipt, raising ``WriteFailed`` when the engine reports a failure. It never
 sleeps or retries; scheduling and backoff belong to the indexing worker, per
 ADR 0001 Decision 9. A synchronous engine returns an already-complete receipt
-without a request.
+without a request. Typesense's import endpoint is synchronous, but it returns
+HTTP 200 even when a document is rejected. The adapter reads every result line
+and raises ``WriteFailed`` when any line reports ``"success": false``, so a 200
+alone never marks a batch complete.
 
 ``begin_rebuild()`` creates a target from ``self.schema`` and returns a
 ``RebuildTarget(index, version, generation)``. The generation is unique to the
