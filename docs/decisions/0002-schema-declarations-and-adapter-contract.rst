@@ -37,7 +37,7 @@ There is one authored declaration, ``IndexSchema``:
 
 * identity: ``name`` and ``version``;
 * ``fields``: a name, one of ``string``/``int32``/``int64``/``float``/``bool``/
-  ``datetime``/``geopoint``/``object``/``unknown``, ``array``,
+  ``datetime``/``object``/``unknown``, ``array``,
   ``additional_properties`` and the capabilities;
 * four capabilities: ``searchable`` (with ``order``), ``filterable``,
   ``facetable`` and ``sortable``.
@@ -192,7 +192,7 @@ For Meilisearch and Typesense:
         pass
 
 An adapter with a narrower feature set makes the check explicit. For example, an
-adapter that cannot represent ``geopoint`` fields:
+adapter that cannot represent nested objects:
 
 .. code-block:: python
 
@@ -200,7 +200,7 @@ adapter that cannot represent ``geopoint`` fields:
         missing = {
             field.name
             for field in self.schema.fields
-            if field.type is FieldType.GEOPOINT
+            if field.type is FieldType.OBJECT or "." in field.name
         }
         if missing:
             raise UnsupportedSchema(

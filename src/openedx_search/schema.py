@@ -67,7 +67,6 @@ class FieldType(StrEnum):
     FLOAT = "float"
     BOOL = "bool"
     DATETIME = "datetime"
-    GEOPOINT = "geopoint"
     OBJECT = "object"
     UNKNOWN = "unknown"
 
