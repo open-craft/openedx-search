@@ -87,3 +87,20 @@ def test_search_credential_requires_every_field():
     """A credential without an index name cannot be used by the browser."""
     with pytest.raises(ValueError, match="index_name"):
         SearchCredential(url="https://search.example.com", index_name="", api_key="scoped-key")
+
+
+def test_filter_term_rejects_a_bare_string():
+    """A string would be split into characters, silently changing the filter."""
+    with pytest.raises(ValueError, match="not a string"):
+        FilterTerm("org", "openedx")
+
+
+def test_filter_term_rejects_a_non_sequence():
+    """A scalar is not a list of values."""
+    with pytest.raises(ValueError, match="must be a sequence"):
+        FilterTerm("org", 1)
+
+
+def test_filter_term_keeps_a_value_sequence():
+    """A tuple is the supported form."""
+    assert FilterTerm("org", ("openedx",)).values == ("openedx",)

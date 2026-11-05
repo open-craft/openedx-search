@@ -66,7 +66,12 @@ class FilterTerm:
         """Validate the field path and the filter values."""
         if not isinstance(self.field, str) or not FIELD_NAME_PATTERN.match(self.field):
             raise ValueError(f"invalid filter field {self.field!r}")
-        values = tuple(self.values)
+        if isinstance(self.values, str):
+            raise ValueError("filter values must be a sequence, not a string")
+        try:
+            values = tuple(self.values)
+        except TypeError as exc:
+            raise ValueError("filter values must be a sequence") from exc
         if not values:
             raise ValueError("a filter term needs at least one value")
         for value in values:
