@@ -90,6 +90,8 @@ class FilterGroup:
 
     def __post_init__(self) -> None:
         """Validate and freeze the group."""
+        if isinstance(self.terms, (str, bytes)):
+            raise ValueError("filter group terms must be a sequence, not a string")
         terms = tuple(self.terms)
         if not terms:
             raise ValueError("a filter group needs at least one term")
@@ -109,8 +111,14 @@ class CredentialScope:
     filters: FilterExpression = ()
 
     def __post_init__(self) -> None:
-        """Freeze the filter tuple."""
-        object.__setattr__(self, "filters", tuple(self.filters))
+        """Validate and freeze the filter groups."""
+        if isinstance(self.filters, (str, bytes)):
+            raise ValueError("filters must be a sequence of FilterGroup, not a string")
+        filters = tuple(self.filters)
+        for group in filters:
+            if not isinstance(group, FilterGroup):
+                raise ValueError("filters must contain FilterGroup instances")
+        object.__setattr__(self, "filters", filters)
 
 
 @dataclass(frozen=True)

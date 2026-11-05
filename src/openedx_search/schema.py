@@ -252,9 +252,15 @@ class IndexSchema:
         """Validate cross-field invariants and freeze the field tuple."""
         _require(bool(INDEX_NAME_PATTERN.match(self.name)), f"invalid schema name {self.name!r}")
         _require(self.version >= 1, "schema version must be >= 1")
+        _require(
+            not isinstance(self.fields, (str, bytes)),
+            "fields must be a sequence of Field, not a string",
+        )
 
         fields = tuple(self.fields)
         _require(bool(fields), "a schema needs at least one field")
+        for entry in fields:
+            _require(isinstance(entry, Field), "fields must be Field instances")
         object.__setattr__(self, "fields", fields)
 
         by_name: dict[str, Field] = {}

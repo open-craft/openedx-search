@@ -348,3 +348,15 @@ def test_unknown_field_type_is_allowed():
         capabilities=Capabilities(sortable=True),
     )
     assert sortable.capabilities.sortable is True
+
+
+def test_schema_fields_reject_a_bare_string():
+    """A string would be split into characters, one per field."""
+    with pytest.raises(SchemaError, match="not a string"):
+        IndexSchema(name="bad_fields", fields="abc")
+
+
+def test_schema_fields_must_be_field_instances():
+    """A sequence of strings is not a field list."""
+    with pytest.raises(SchemaError, match="Field instances"):
+        IndexSchema(name="bad_fields", fields=("abc",))

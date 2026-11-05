@@ -61,6 +61,24 @@ def test_filter_group_rejects_bare_terms():
         FilterGroup(("org",))  # type: ignore[arg-type]
 
 
+def test_filter_group_rejects_a_bare_string():
+    """A string would be split into characters, one per term."""
+    with pytest.raises(ValueError, match="not a string"):
+        FilterGroup("org")  # type: ignore[arg-type]
+
+
+def test_credential_scope_rejects_a_bare_string():
+    """A string would become one filter group per character."""
+    with pytest.raises(ValueError, match="not a string"):
+        CredentialScope(filters="org")  # type: ignore[arg-type]
+
+
+def test_credential_scope_requires_filter_groups():
+    """The scope holds FilterGroup values, not terms or strings."""
+    with pytest.raises(ValueError, match="FilterGroup"):
+        CredentialScope(filters=("org",))  # type: ignore[arg-type]
+
+
 def test_rebuild_target_name_includes_a_generation():
     """Two rebuilds at the same version never share a target name."""
     first = RebuildTarget(index="studio_content", version=2, generation="20261104")
