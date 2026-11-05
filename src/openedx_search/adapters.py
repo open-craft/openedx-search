@@ -238,14 +238,18 @@ class Adapter(ABC):
         """Create the index if needed and apply drift-free settings from ``self.schema``."""
 
     @abstractmethod
-    def begin_rebuild(self) -> RebuildTarget:
+    def begin_rebuild(self, target: RebuildTarget) -> None:
         """
-        Create a fresh target for ``self.schema`` and return its handle.
+        Create and configure ``target`` from ``self.schema``.
 
-        The adapter picks a generation unique to this rebuild and derives the
-        name from it. It never reuses a leftover target, because a rebuild only
-        upserts and would keep documents deleted after the crash; leftovers with
-        the same index and version prefix are removed instead.
+        The library mints ``target`` and holds the rebuild lease before this
+        call, so no other rebuild can create or clean a target for this use case
+        at the same time. The adapter removes leftovers with the same index and
+        version prefix, except ``target`` and the live index: a leftover would
+        keep documents deleted after the crash if reused, and the live index
+        must never be removed. On Typesense the live index is the collection
+        the alias currently points at, and after a swap it carries the same
+        prefix as the target.
         """
 
     @abstractmethod

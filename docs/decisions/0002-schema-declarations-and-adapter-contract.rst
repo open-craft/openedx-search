@@ -149,7 +149,7 @@ Each adapter implements ``openedx_search.adapters.Adapter``:
 
     validate_schema()                                      -> None or raises UnsupportedSchema
     reconcile()                                            -> ReconcileResult
-    begin_rebuild()                                        -> RebuildTarget
+    begin_rebuild(target)                                  -> None
     commit_rebuild(target)                                 -> None
     abort_rebuild(target)                                  -> None
     upsert(documents, target=None)                         -> WriteReceipt
@@ -277,16 +277,17 @@ HTTP 200 even when a document is rejected. The adapter reads every result line
 and raises ``WriteFailed`` when any line reports ``"success": false``, so a 200
 alone never marks a batch complete.
 
-``begin_rebuild()`` creates a target from ``self.schema`` and returns a
-``RebuildTarget(index, version, generation)``. The generation is unique to the
-rebuild and is not the schema version, so the target name
-(``<index>_v<version>_<generation>``) never collides with the live index, which
-Typesense names for the index and version and cannot rename. A leftover target
-from a crashed worker is removed, never reused: a rebuild only upserts, so a
-reused target would keep documents deleted after the crash.
+``begin_rebuild(target)`` creates and configures the target from
+``self.schema``; the library mints the ``RebuildTarget(index, version,
+generation)`` and holds the lease before the call. The generation is unique to
+the rebuild and is not the schema version, so a second rebuild at the same
+version derives a different target name. ``begin_rebuild`` removes leftovers
+with the same index and version prefix, except ``target`` and the live index. On
+Typesense the live index is the collection the alias points at, and after a swap
+it carries the same prefix, so a plain prefix delete would remove it.
 ``commit_rebuild(target)`` waits for the target's writes, swaps it into place
-and deletes the old target. ``abort_rebuild(target)`` discards it. The library
-orchestrates these primitives in section 4.
+and deletes the old target. ``abort_rebuild(target)`` discards it and never
+touches the lease. The library orchestrates these primitives in section 4.
 
 ``search`` and ``mint_credential`` are the read-side adapter methods; section 4
 describes their consumer contract.
@@ -377,21 +378,24 @@ target when the target carries the same schema version.
 ``check_write`` delegates one poll to the adapter; the worker owns retry and
 backoff (section 3).
 
-``rebuild`` resolves the registration, calls ``begin_rebuild``, records the
-target in the shared cache, and iterates ``document_source``.
-``begin_rebuild`` starts from a fresh generation and removes leftovers with the
-same index and version prefix, so a crashed rebuild never leaves a target that a
-later one reuses. The cache key is per use case and holds the ``RebuildTarget``,
-whose generation is the lease owner. Acquisition is one atomic ``cache.add``; a
-second rebuild fails with ``RebuildInProgress``. The rebuild refreshes the lease
-with ``cache.touch``, which only extends an existing key, and aborts when the key
-is gone. Before ``commit_rebuild`` it reads the key and compares the stored
+``rebuild`` resolves the registration, mints a ``RebuildTarget`` from the
+logical index, the schema version and a unique generation, and acquires the
+lease with one atomic ``cache.add`` before creating anything. A second rebuild
+fails with ``RebuildInProgress`` and touches no index. Only after the lease is
+held does the library call ``begin_rebuild(target)``, so the cleanup it performs
+cannot race another rebuild. The cache key is per use case and holds the
+``RebuildTarget``, whose generation is the lease owner. The lease TTL is five
+minutes and is refreshed with ``cache.touch`` between batches; when the key is
+gone the worker stops writing to the target, because a newer rebuild may have
+cleaned it up. Before ``commit_rebuild`` it reads the key and compares the stored
 generation with its own target; a missing or different generation means another
 rebuild took over, so it aborts instead of swapping a target that may have missed
-concurrent writes. ``commit_rebuild`` and ``abort_rebuild`` clear the key. A
-writer reads the key on every write; no key means no active rebuild. It
-dual-writes only when the target's version equals its registration's version; a
-mismatch raises ``SchemaVersionMismatch`` (see below). The cache is selected by
+concurrent writes. The library releases the lease after ``commit_rebuild`` or
+``abort_rebuild``, and only when the stored value is still its own target;
+``abort_rebuild`` discards the target and never touches the cache. A writer
+reads the key on every write; no key means no active rebuild. It dual-writes
+only when the target's version equals its registration's version; a mismatch
+raises ``SchemaVersionMismatch`` (see below). The cache is selected by
 ``OPENEDX_SEARCH_CACHE_ALIAS``, which defaults to ``default``, and must be shared
 across writer processes, so the process-local cache is not sufficient. Use a
 dedicated Redis cache for this alias: the platform default is memcached, and an

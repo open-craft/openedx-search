@@ -140,15 +140,19 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     writer first: the target cannot accept the old documents, and the live index
     cannot accept the new ones.
 
-    The library creates a fresh target, records it in the shared Redis cache
-    with a lease, confirms each source batch, and swaps the target in only after
-    its writes are complete. The target name includes a generation unique to this
-    rebuild, so a second rebuild at the same version never derives the live
-    index's name. Leftovers from a crashed worker are removed by
-    ``begin_rebuild``, never reused: a rebuild only upserts and would keep
-    documents deleted after the crash. The worker checks its lease before
-    committing; an expired or missing lease aborts the target. A failure aborts
-    the target.
+    The library mints a fresh target, acquires the rebuild lease with one atomic
+    ``cache.add``, and only then calls ``begin_rebuild(target)``, so a second
+    rebuild fails with ``RebuildInProgress`` before it can clean anything. It
+    confirms each source batch, refreshes the lease between batches, and swaps
+    the target in only after its writes are complete. The target name includes a
+    generation unique to this rebuild. ``begin_rebuild`` removes leftovers with
+    the same index and version prefix, except the new target and the live index;
+    on Typesense the live index is the collection the alias points at and shares
+    the prefix after a swap. A reused target would keep documents deleted after
+    the crash, and the live index must never be removed. The worker checks its
+    lease before committing; a missing or different lease aborts the target. The
+    library releases the lease only when the key still holds its own target. A
+    failure aborts the target.
 
     A reindex is not a consistent snapshot. If a write reaches the target
     before the source writes the same document from an older read, the
