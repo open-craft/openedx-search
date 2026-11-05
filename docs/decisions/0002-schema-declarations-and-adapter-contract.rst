@@ -211,13 +211,20 @@ A document is valid when:
 * every declared field that is present has the declared type and shape, and an
   array field is an array of that type;
 * a ``datetime`` value is POSIX seconds, which is how the engines store it;
-* a nested object follows the same rules for its declared leaves, except under
-  ``additional_properties``, where any key is accepted;
+* a nested object follows the same rules for its declared leaves. Under
+  ``additional_properties`` any key is accepted, and its value must be a string;
 * every field in the document is declared in the schema.
 
 ``null`` is not a value. A consumer that has nothing to store omits the field
 instead of sending ``null``, so a null is an error for required and optional
 fields alike.
+
+Free-form values are string-only because the engines diverge otherwise.
+Meilisearch indexes a number or a boolean and returns it from a text search,
+while Typesense searches only strings. Typesense also pins the type of the first
+value it sees for a free-form key and rejects a later document that uses a
+different one, which Meilisearch accepts. Strings keep the accepted documents
+and the search results the same on both engines.
 
 A violation raises ``DocumentError`` naming the document's ``id``, the field
 and the reason. Validation runs before the batch reaches the adapter, so one
@@ -456,7 +463,10 @@ Meilisearch would render ``searchableAttributes: ["tags.taxonomy"]`` and
 Typesense ``query_by=tags.taxonomy``. Without that expansion, Meilisearch
 includes ``tags.count`` when ``tags`` is searchable, while Typesense ignores it.
 Rejected because parity would depend on every adapter applying the expansion,
-and free-form ``additional_properties`` objects cannot be expanded.
+and free-form ``additional_properties`` objects cannot be expanded. Free-form
+values are string-only for the same reason: a number is searchable on
+Meilisearch and not on Typesense, and Typesense pins the type of the first value
+it sees for a free-form key.
 
 The strict rule instead requires a searchable object to contain only string
 leaves. A mixed object marks its string children searchable:

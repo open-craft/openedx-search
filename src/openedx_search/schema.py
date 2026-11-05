@@ -145,7 +145,8 @@ class Field:
 
     Nested fields use dot paths (``tags.level0``), which is how all supported
     engines address them. ``additional_properties`` marks a free-form object
-    whose keys are not declared individually. ``required`` marks a field every
+    whose keys are not declared individually and whose values must be strings.
+    ``required`` marks a field every
     document must provide; the Typesense renderer emits ``optional: false``.
     ``searchable`` is limited to string fields and objects; an array field
     cannot be sortable.
