@@ -204,6 +204,21 @@ def _validate_parent_paths(by_name: dict[str, Field]) -> None:
         _require(parent.type is FieldType.OBJECT, f"parent field {parent_name!r} must be an object")
 
 
+def _validate_required_children(by_name: dict[str, Field]) -> None:
+    """Require every ancestor of a required field to be required too."""
+    for name, entry in by_name.items():
+        if not entry.required:
+            continue
+        parent_name = name.rsplit(".", 1)[0] if "." in name else None
+        while parent_name is not None:
+            parent = by_name[parent_name]
+            _require(
+                parent.required,
+                f"field {name!r} is required but parent {parent_name!r} is optional",
+            )
+            parent_name = parent_name.rsplit(".", 1)[0] if "." in parent_name else None
+
+
 def _validate_array_object_children(by_name: dict[str, Field]) -> None:
     """Require a field inside an object array to be an array itself."""
     for name, entry in by_name.items():
@@ -273,6 +288,7 @@ class IndexSchema:
 
         _validate_id(by_name)
         _validate_parent_paths(by_name)
+        _validate_required_children(by_name)
         _validate_array_object_children(by_name)
         _validate_searchable_objects(by_name)
 

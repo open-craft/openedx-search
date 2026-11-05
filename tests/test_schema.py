@@ -334,6 +334,32 @@ def test_object_array_children_can_be_arrays():
     assert schema.field("items.price").array is True
 
 
+def test_required_field_needs_a_required_parent():
+    """A document that omits the parent also omits the required child."""
+    with pytest.raises(SchemaError, match="parent 'details' is optional"):
+        IndexSchema(
+            name="bad_required",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("details", FieldType.OBJECT),
+                Field("details.name", FieldType.STRING, required=True),
+            ),
+        )
+
+
+def test_required_field_with_required_parent_is_valid():
+    """A required chain can always be satisfied."""
+    schema = IndexSchema(
+        name="good_required",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("details", FieldType.OBJECT, required=True),
+            Field("details.name", FieldType.STRING, required=True),
+        ),
+    )
+    assert schema.field("details.name").required is True
+
+
 def test_additional_properties_requires_object():
     """Only object fields can be free-form."""
     with pytest.raises(SchemaError, match="additional_properties requires an object"):

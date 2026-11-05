@@ -166,7 +166,10 @@ leaves are strings, and an array field cannot be ``sortable``. A field inside an
 object array is itself an array, because Typesense requires array types there: a
 declaration whose ancestor chain includes an ``array`` object must set
 ``array``, and since arrays cannot be ``sortable``, a sortable leaf under an
-object array is rejected.
+object array is rejected. A required field must have a required parent chain: a
+required ``a.b`` under an optional ``a`` is rejected, because Typesense rejects
+a document that omits a non-optional nested field even when the parent is
+absent.
 
 The second is ``Adapter.validate_schema()``, which covers what the first cannot:
 capabilities the neutral model allows but this particular adapter cannot
