@@ -111,25 +111,19 @@ def get_backend_config(use_case: str | None = None) -> BackendConfig:
     engine = declared.get("engine")
     url = declared.get("url")
     api_key = declared.get("api_key")
-    for key, value in (("engine", engine), ("url", url), ("api_key", api_key)):
-        if not isinstance(value, str) or not value:
-            raise BackendNotFound(f"Search backend {name!r} has no valid {key}")
-
     search_api_key = declared.get("search_api_key")
-    if search_api_key is not None and (not isinstance(search_api_key, str) or not search_api_key):
-        raise BackendNotFound(f"Search backend {name!r} has an invalid search_api_key")
-
     public_url = declared.get("public_url")
     if public_url is None:
         public_url = url
-    if not isinstance(public_url, str) or not public_url:
-        raise BackendNotFound(f"Search backend {name!r} has an invalid public_url")
 
-    return BackendConfig(
-        name=name,
-        engine=engine,
-        url=url,
-        api_key=api_key,
-        search_api_key=search_api_key,
-        public_url=public_url,
-    )
+    try:
+        return BackendConfig(
+            name=name,
+            engine=engine,
+            url=url,
+            api_key=api_key,
+            search_api_key=search_api_key,
+            public_url=public_url,
+        )
+    except ValueError as exc:
+        raise BackendNotFound(f"Search backend {name!r}: {exc}") from exc
