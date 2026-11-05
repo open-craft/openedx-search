@@ -4,6 +4,7 @@ import pytest
 
 from openedx_search.schema import (
     DOCUMENT_ID_PATTERN,
+    MAX_DOCUMENT_ID_BYTES,
     Capabilities,
     Field,
     FieldType,
@@ -49,6 +50,20 @@ def test_document_id_rejects_an_empty_key():
     """An empty key has no id."""
     with pytest.raises(ValueError, match="non-empty"):
         document_id_from_key("")
+
+
+def test_document_id_fits_the_engine_limit():
+    """A long key still yields an id both engines accept."""
+    derived = document_id_from_key("block-v1:" + "x" * 600)
+    assert len(derived.encode()) <= MAX_DOCUMENT_ID_BYTES
+    assert DOCUMENT_ID_PATTERN.match(derived)
+    assert derived.startswith("block-v1-")
+
+
+def test_truncated_document_ids_stay_unique():
+    """Two keys that share a truncated slug still differ."""
+    prefix = "block-v1:" + "x" * 600
+    assert document_id_from_key(prefix + "a") != document_id_from_key(prefix + "b")
 
 
 def test_validate_document_id_accepts_an_engine_safe_id():

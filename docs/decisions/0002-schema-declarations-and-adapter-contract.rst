@@ -218,10 +218,11 @@ neither behavior.
 A document is valid when:
 
 * every ``required`` field is present, including the ``id`` the schema requires;
-* the ``id`` value matches ``[A-Za-z0-9_-]+``, the intersection of the two
-  engines. Meilisearch rejects a colon and fails the whole batch, so an opaque
-  key is derived with ``document_id_from_key`` before it is indexed; the library
-  validates the id and does not rewrite the document;
+* the ``id`` value matches ``[A-Za-z0-9_-]+`` and is at most 468 bytes, the
+  intersection of the two engines and the filterable limit, because ``id`` may
+  be filterable. Meilisearch rejects a colon and fails the whole batch, so an
+  opaque key is derived with ``document_id_from_key`` before it is indexed; the
+  library validates the id and does not rewrite the document;
 * every declared field that is present has the declared type and shape, and an
   array field is an array of that type;
 * a ``datetime`` value is accepted for a ``DATETIME`` field and rendered as

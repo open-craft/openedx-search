@@ -20,6 +20,7 @@ from hashlib import blake2b
 
 __all__ = [
     "DOCUMENT_ID_PATTERN",
+    "MAX_DOCUMENT_ID_BYTES",
     "Capabilities",
     "Field",
     "FieldType",
@@ -35,17 +36,26 @@ FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*\Z")
 USE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\Z")
 DOCUMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+\Z")
 
+# Meilisearch limits primary key values to 511 bytes and filterable values to
+# 468. ``id`` may be filterable, so 468 is the limit that matters.
+MAX_DOCUMENT_ID_BYTES = 468
+_DIGEST_HEX_LENGTH = 16
+_MAX_SLUG_LENGTH = MAX_DOCUMENT_ID_BYTES - _DIGEST_HEX_LENGTH - 1
+
 
 def document_id_from_key(key: str) -> str:
     """
     Return an engine-safe document id derived from a consumer key.
 
-    The slug keeps the id readable; the hash suffix keeps it unique when two
-    keys slug to the same value. The result matches ``DOCUMENT_ID_PATTERN``.
+    The slug keeps the id readable up to the engine limit; the hash suffix keeps
+    it unique when two keys slug to the same value or share a truncated slug.
+    The result matches ``DOCUMENT_ID_PATTERN`` and fits
+    ``MAX_DOCUMENT_ID_BYTES``.
     """
     if not isinstance(key, str) or not key:
         raise ValueError("key must be a non-empty string")
     slug = re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
+    slug = slug[:_MAX_SLUG_LENGTH].rstrip("-")
     suffix = blake2b(key.encode(), digest_size=8, usedforsecurity=False).hexdigest()
     return f"{slug}-{suffix}" if slug else suffix
 
