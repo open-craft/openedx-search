@@ -5,8 +5,8 @@ from datetime import timedelta
 import pytest
 from django.test import override_settings
 
-from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, register_adapter
-from openedx_search.api import DocumentError, _normalize_primary_keys, delete, mint_credential, upsert
+from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, WriteReceipt, register_adapter
+from openedx_search.api import DocumentError, _normalize_primary_keys, check_write, delete, mint_credential, upsert
 from openedx_search.config import BackendConfig
 from openedx_search.registry import UseCaseNotRegistered, register_use_case
 from tests.fakes import SIMPLE_REGISTRATION, FakeAdapter
@@ -139,3 +139,25 @@ def test_delete_rejects_an_empty_filter(fake_adapter):
     """An empty filter would match everything."""
     with pytest.raises(ValueError, match="not be empty"):
         delete("simple", filter=())
+
+
+def test_check_write_delegates(fake_adapter):
+    """One poll reaches the adapter and returns its receipt."""
+    receipt = WriteReceipt(task_id=7)
+
+    result = check_write("simple", receipt)
+
+    assert result.complete
+    assert fake_adapter.calls[-1] == ("check_write", receipt)
+
+
+def test_check_write_rejects_a_non_receipt(fake_adapter):
+    """The function only accepts a receipt from a write."""
+    with pytest.raises(ValueError, match="WriteReceipt"):
+        check_write("simple", "receipt")
+
+
+def test_check_write_unknown_use_case(fake_adapter):
+    """The registration must exist."""
+    with pytest.raises(UseCaseNotRegistered):
+        check_write("missing", WriteReceipt())
