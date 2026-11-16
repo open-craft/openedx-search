@@ -134,7 +134,10 @@ def check_write(use_case: str, receipt: WriteReceipt) -> WriteReceipt:
     already-complete receipt without a request. The worker calls this until the
     receipt is complete and raises when the engine reports a failed write.
     """
-    raise NotImplementedError("check_write is implemented with the engine adapters")
+    if not isinstance(receipt, WriteReceipt):
+        raise ValueError("receipt must be a WriteReceipt")
+    registration = get_registration(use_case)
+    return get_adapter(registration).check_write(receipt)
 
 
 def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:

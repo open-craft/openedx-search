@@ -62,8 +62,9 @@ class FakeAdapter(Adapter):
         return WriteReceipt(complete=True)
 
     def check_write(self, receipt: WriteReceipt) -> WriteReceipt:
-        """Return the receipt unchanged."""
-        return receipt
+        """Record the poll and report completion."""
+        self.calls.append(("check_write", receipt))
+        return WriteReceipt(complete=True)
 
     def search(self, query: Any) -> SearchResult:
         """Return no hits."""
