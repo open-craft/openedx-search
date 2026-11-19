@@ -22,6 +22,11 @@ Run `make help` for the full list of targets. See
 [Getting Started](docs/getting_started.rst) for how to change dependencies and
 how releases work.
 
+## Documentation
+
+- [Registering a use case](docs/how-tos/registering-use-cases.rst)
+- [Architecture decision records](docs/decisions/)
+
 ## License
 
 The code in this repository is licensed under the AGPL-3.0 unless otherwise

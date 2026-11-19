@@ -1,0 +1,453 @@
+"""Tests for the engine-neutral schema model."""
+
+import pytest
+
+from openedx_search.schema import (
+    DOCUMENT_ID_PATTERN,
+    MAX_DOCUMENT_ID_BYTES,
+    Capabilities,
+    Field,
+    FieldType,
+    IndexSchema,
+    SchemaError,
+    Searchable,
+    document_id_from_key,
+    validate_document_id,
+)
+from tests.fixtures import STUDIO_COURSE_SCHEMA, STUDIO_LIBRARY_SCHEMA
+
+
+def test_course_schema_is_valid():
+    """The course schema covers only the course document shape."""
+    assert STUDIO_COURSE_SCHEMA.name == "studio_course"
+    assert len(STUDIO_COURSE_SCHEMA.fields) == 21
+    assert STUDIO_COURSE_SCHEMA.field("display_name").capabilities.searchable.order == 1
+    assert STUDIO_COURSE_SCHEMA.field("tags.level3").capabilities.facetable is True
+    assert STUDIO_COURSE_SCHEMA.field("content").additional_properties is True
+    assert STUDIO_COURSE_SCHEMA.field("access_id").capabilities.filterable is True
+
+
+def test_document_id_from_key_is_stable():
+    """The derived id keeps a readable slug and a stable hash suffix."""
+    assert document_id_from_key("block-v1:edX+DemoX+type@html+block@abc") == (
+        "block-v1-edx-demox-type-html-block-abc-e1dc33bfca7cc9cb"
+    )
+
+
+def test_document_id_matches_the_pattern():
+    """A derived id is addressable by both engines."""
+    assert DOCUMENT_ID_PATTERN.match(document_id_from_key("course-v1:edX+DemoX+2026"))
+
+
+def test_document_id_falls_back_to_the_hash():
+    """A key with no alphanumeric characters still yields a valid id."""
+    derived = document_id_from_key(":::")
+    assert DOCUMENT_ID_PATTERN.match(derived)
+    assert derived == document_id_from_key(":::")
+
+
+def test_document_id_rejects_an_empty_key():
+    """An empty key has no id."""
+    with pytest.raises(ValueError, match="non-empty"):
+        document_id_from_key("")
+
+
+def test_document_id_fits_the_engine_limit():
+    """A long key still yields an id both engines accept."""
+    derived = document_id_from_key("block-v1:" + "x" * 600)
+    assert len(derived.encode()) <= MAX_DOCUMENT_ID_BYTES
+    assert DOCUMENT_ID_PATTERN.match(derived)
+    assert derived.startswith("block-v1-")
+
+
+def test_truncated_document_ids_stay_unique():
+    """Two keys that share a truncated slug still differ."""
+    prefix = "block-v1:" + "x" * 600
+    assert document_id_from_key(prefix + "a") != document_id_from_key(prefix + "b")
+
+
+def test_validate_document_id_accepts_an_engine_safe_id():
+    """A valid id is returned unchanged."""
+    assert validate_document_id("block-v1-edx-demo") == "block-v1-edx-demo"
+
+
+def test_validate_document_id_rejects_a_colon():
+    """The engines reject a colon in an id."""
+    with pytest.raises(ValueError, match="invalid document id"):
+        validate_document_id("block-v1:edX+DemoX")
+
+
+def test_validate_document_id_rejects_non_strings():
+    """Ids are strings, not integers or other objects."""
+    with pytest.raises(ValueError, match="invalid document id"):
+        validate_document_id(1)
+
+
+def test_library_schema_is_valid():
+    """The library schema is the union of the three library document shapes."""
+    assert STUDIO_LIBRARY_SCHEMA.name == "studio_library"
+    assert len(STUDIO_LIBRARY_SCHEMA.fields) == 47
+    assert STUDIO_LIBRARY_SCHEMA.field("created").type is FieldType.DATETIME
+    assert STUDIO_LIBRARY_SCHEMA.field("num_children").type is FieldType.INT32
+    assert STUDIO_LIBRARY_SCHEMA.field("units.key").array is True
+    assert STUDIO_LIBRARY_SCHEMA.field("content.child_usage_keys").array is True
+    assert STUDIO_LIBRARY_SCHEMA.field("published.num_children").type is FieldType.INT32
+
+
+def test_course_schema_omits_library_only_fields():
+    """Course blocks do not carry collections, containers or publish state."""
+    course_fields = {entry.name for entry in STUDIO_COURSE_SCHEMA.fields}
+    library_fields = {entry.name for entry in STUDIO_LIBRARY_SCHEMA.fields}
+
+    library_only = {
+        "collections",
+        "collections.display_name",
+        "collections.key",
+        "units",
+        "units.display_name",
+        "units.key",
+        "subsections",
+        "subsections.display_name",
+        "subsections.key",
+        "sections",
+        "sections.display_name",
+        "sections.key",
+        "created",
+        "last_published",
+        "publish_status",
+        "num_children",
+        "published",
+        "published.display_name",
+        "published.description",
+        "published.num_children",
+        "content.child_usage_keys",
+        "content.child_display_names",
+    }
+
+    assert library_only <= library_fields
+    assert not library_only & course_fields
+    assert course_fields <= library_fields
+
+
+def test_field_defaults():
+    """A bare field is a string with no capability flags set."""
+    entry = Field("title")
+    assert entry.type is FieldType.STRING
+    assert entry.required is False
+    assert entry.capabilities.searchable is False
+    assert entry.capabilities.filterable is False
+    assert entry.capabilities.facetable is False
+    assert entry.capabilities.sortable is False
+
+
+def test_searchable_field_must_be_string_or_object():
+    """Typesense's ``query_by`` only searches string leaves."""
+    with pytest.raises(SchemaError, match="must be a string or object"):
+        Field("access_id", FieldType.INT64, capabilities=Capabilities(searchable=True))
+
+    entry = Field("title", FieldType.STRING, capabilities=Capabilities(searchable=True))
+    assert entry.capabilities.searchable is True
+
+    content = Field(
+        "content",
+        FieldType.OBJECT,
+        additional_properties=True,
+        capabilities=Capabilities(searchable=True),
+    )
+    assert content.capabilities.searchable is True
+
+
+def test_searchable_object_leaves_must_be_strings():
+    """An object field can only be searched through its string leaves."""
+    with pytest.raises(SchemaError, match="non-string leaf"):
+        IndexSchema(
+            name="bad_searchable_object",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("meta", FieldType.OBJECT, capabilities=Capabilities(searchable=True)),
+                Field("meta.count", FieldType.INT64),
+            ),
+        )
+
+    schema = IndexSchema(
+        name="searchable_object",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("meta", FieldType.OBJECT, capabilities=Capabilities(searchable=True)),
+            Field("meta.title", FieldType.STRING),
+        ),
+    )
+    assert schema.field("meta.title").type is FieldType.STRING
+
+
+def test_nested_field_requires_a_declared_parent():
+    """A dotted path must have a declared parent object."""
+    with pytest.raises(SchemaError, match="has no declared parent 'tags'"):
+        IndexSchema(
+            name="missing_parent",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("tags.test", FieldType.STRING),
+            ),
+        )
+
+
+def test_nested_field_parent_must_be_an_object():
+    """A dotted path cannot hang off a scalar parent."""
+    with pytest.raises(SchemaError, match="parent field 'tags' must be an object"):
+        IndexSchema(
+            name="bad_parent",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("tags", FieldType.STRING),
+                Field("tags.test", FieldType.STRING),
+            ),
+        )
+
+
+def test_three_level_nested_path_is_valid():
+    """A three-level path is valid when every parent is an object."""
+    schema = IndexSchema(
+        name="nested",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("a", FieldType.OBJECT),
+            Field("a.b", FieldType.OBJECT),
+            Field("a.b.c", FieldType.STRING),
+        ),
+    )
+    assert schema.field("a.b.c").type is FieldType.STRING
+
+
+def test_three_level_nested_path_requires_each_parent():
+    """A three-level path must declare both parents."""
+    with pytest.raises(SchemaError, match="has no declared parent 'a.b'"):
+        IndexSchema(
+            name="nested",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("a", FieldType.OBJECT),
+                Field("a.b.c", FieldType.STRING),
+            ),
+        )
+
+
+def test_searchable_object_three_levels_rejects_non_string_leaf():
+    """The searchable leaf check walks all declared levels."""
+    with pytest.raises(SchemaError, match="non-string leaf 'a.b.c'"):
+        IndexSchema(
+            name="nested",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("a", FieldType.OBJECT, capabilities=Capabilities(searchable=True)),
+                Field("a.b", FieldType.OBJECT),
+                Field("a.b.c", FieldType.INT64),
+            ),
+        )
+
+
+def test_required_fields_are_marked():
+    """Fields the content/search builders always provide are required."""
+    assert STUDIO_COURSE_SCHEMA.field("id").required is True
+    assert STUDIO_COURSE_SCHEMA.field("block_type").required is True
+    assert STUDIO_COURSE_SCHEMA.field("modified").required is False
+
+    assert STUDIO_LIBRARY_SCHEMA.field("type").required is True
+    assert STUDIO_LIBRARY_SCHEMA.field("created").required is True
+    assert STUDIO_LIBRARY_SCHEMA.field("block_type").required is False
+
+
+def test_facetable_implies_filterable():
+    """Facets are filters in every supported engine."""
+    capabilities = Capabilities(facetable=True)
+    assert capabilities.filterable is True
+
+
+def test_facetable_keeps_an_explicit_filterable():
+    """An explicit filterable flag survives facet normalization."""
+    capabilities = Capabilities(facetable=True, filterable=True)
+    assert capabilities.filterable is True
+
+
+def test_duplicate_field_names_are_rejected():
+    """Two fields cannot share a path."""
+    with pytest.raises(SchemaError, match="duplicate field name"):
+        IndexSchema(name="duplicate", fields=(Field("id"), Field("id")))
+
+
+def test_id_field_must_be_declared():
+    """A schema must declare the required string id."""
+    with pytest.raises(SchemaError, match="required string field 'id'"):
+        IndexSchema(name="missing_id", fields=(Field("other", required=True),))
+
+
+def test_id_field_must_be_string():
+    """Typesense and Meilisearch both use a string id."""
+    with pytest.raises(SchemaError, match="field 'id' must be a string"):
+        IndexSchema(name="bad_id", fields=(Field("id", FieldType.INT32, required=True),))
+
+
+def test_id_field_must_be_required():
+    """The document id cannot be omitted."""
+    with pytest.raises(SchemaError, match="field 'id' must be required"):
+        IndexSchema(name="bad_id", fields=(Field("id", FieldType.STRING),))
+
+
+def test_id_field_cannot_be_an_array():
+    """The document id is a single string."""
+    with pytest.raises(SchemaError, match="field 'id' cannot be an array"):
+        IndexSchema(
+            name="bad_id",
+            fields=(Field("id", FieldType.STRING, required=True, array=True),),
+        )
+
+
+@pytest.mark.parametrize(
+    ("capabilities", "message"),
+    [
+        (Capabilities(searchable=True), "cannot be searchable"),
+        (Capabilities(facetable=True), "cannot be facetable"),
+        (Capabilities(sortable=True), "cannot be sortable"),
+    ],
+)
+def test_id_field_rejects_indexing_capabilities(capabilities, message):
+    """Typesense ignores the declared id field, so these would be dropped."""
+    with pytest.raises(SchemaError, match=message):
+        IndexSchema(
+            name="bad_id",
+            fields=(Field("id", FieldType.STRING, required=True, capabilities=capabilities),),
+        )
+
+
+def test_id_field_can_be_filterable():
+    """Filtering by id is useful and supported."""
+    schema = IndexSchema(
+        name="filterable_id",
+        fields=(
+            Field("id", FieldType.STRING, required=True, capabilities=Capabilities(filterable=True)),
+        ),
+    )
+    assert schema.field("id").capabilities.filterable is True
+
+
+def test_object_field_cannot_be_sortable():
+    """Object fields have no sortable representation."""
+    with pytest.raises(SchemaError, match="cannot be sortable"):
+        Field("tags", FieldType.OBJECT, capabilities=Capabilities(sortable=True))
+
+
+def test_array_field_cannot_be_sortable():
+    """Typesense cannot sort array fields."""
+    with pytest.raises(SchemaError, match="array field .* cannot be sortable"):
+        Field(
+            "tags.level0",
+            FieldType.STRING,
+            array=True,
+            capabilities=Capabilities(sortable=True),
+        )
+
+
+def test_object_array_children_must_be_arrays():
+    """Typesense requires array types inside an object array."""
+    with pytest.raises(SchemaError, match="must be an array"):
+        IndexSchema(
+            name="bad_object_array",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("items", FieldType.OBJECT, array=True),
+                Field("items.price", FieldType.INT32, capabilities=Capabilities(sortable=True)),
+            ),
+        )
+
+
+def test_object_array_children_can_be_arrays():
+    """An array leaf inside an object array is valid."""
+    schema = IndexSchema(
+        name="object_array",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("items", FieldType.OBJECT, array=True),
+            Field("items.price", FieldType.INT32, array=True),
+        ),
+    )
+    assert schema.field("items.price").array is True
+
+
+def test_required_field_needs_a_required_parent():
+    """A document that omits the parent also omits the required child."""
+    with pytest.raises(SchemaError, match="parent 'details' is optional"):
+        IndexSchema(
+            name="bad_required",
+            fields=(
+                Field("id", FieldType.STRING, required=True),
+                Field("details", FieldType.OBJECT),
+                Field("details.name", FieldType.STRING, required=True),
+            ),
+        )
+
+
+def test_required_field_with_required_parent_is_valid():
+    """A required chain can always be satisfied."""
+    schema = IndexSchema(
+        name="good_required",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("details", FieldType.OBJECT, required=True),
+            Field("details.name", FieldType.STRING, required=True),
+        ),
+    )
+    assert schema.field("details.name").required is True
+
+
+def test_additional_properties_requires_object():
+    """Only object fields can be free-form."""
+    with pytest.raises(SchemaError, match="additional_properties requires an object"):
+        Field("title", FieldType.STRING, additional_properties=True)
+
+
+def test_nested_paths_are_allowed():
+    """Nested fields use dot paths."""
+    entry = Field("tags.level0", FieldType.STRING, array=True)
+    assert entry.name == "tags.level0"
+
+
+def test_bad_nested_path_is_rejected():
+    """An empty path segment is invalid."""
+    with pytest.raises(SchemaError, match="invalid field path"):
+        Field("tags..level0")
+
+
+def test_searchable_order_must_be_positive():
+    """Searchable rank starts at one."""
+    with pytest.raises(SchemaError, match="order must be >= 1"):
+        Searchable(order=0)
+
+
+def test_searchable_order_is_optional():
+    """A searchable field may omit the ranking position."""
+    assert Searchable().order is None
+
+
+def test_field_lookup_by_name():
+    """``field`` returns the declared entry and raises for unknown names."""
+    assert STUDIO_COURSE_SCHEMA.field("usage_key").type is FieldType.STRING
+    with pytest.raises(KeyError):
+        STUDIO_COURSE_SCHEMA.field("not_a_field")
+
+
+def test_schema_fields_reject_a_bare_string():
+    """A string would be split into characters, one per field."""
+    with pytest.raises(SchemaError, match="not a string"):
+        IndexSchema(name="bad_fields", fields="abc")
+
+
+def test_schema_fields_must_be_field_instances():
+    """A sequence of strings is not a field list."""
+    with pytest.raises(SchemaError, match="Field instances"):
+        IndexSchema(name="bad_fields", fields=("abc",))
+
+
+def test_invalid_field_type_raises():
+    """A field type must be one the supported engines share."""
+    with pytest.raises(SchemaError, match="invalid field type"):
+        Field("title", "nope")
