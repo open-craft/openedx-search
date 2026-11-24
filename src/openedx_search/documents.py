@@ -32,7 +32,10 @@ def validate_document(schema: IndexSchema, document: Mapping[str, Any]) -> None:
     if not isinstance(document, Mapping):
         raise DocumentError("a document must be a mapping")
     by_name = {field.name: field for field in schema.fields}
-    _validate_object(by_name, document, prefix="", label=_label(document))
+    try:
+        _validate_object(by_name, document, prefix="")
+    except DocumentError as exc:
+        raise DocumentError(f"{_label(document)}: {exc}") from exc
 
 
 def _label(document: Mapping[str, Any]) -> str:
@@ -48,7 +51,6 @@ def _validate_object(
     obj: Mapping[str, Any],
     *,
     prefix: str,
-    label: str,
 ) -> None:
     """Validate one object level, including required children and free-form keys."""
     parent_name = prefix[:-1] if prefix else None
@@ -58,25 +60,25 @@ def _validate_object(
 
     for key, value in obj.items():
         if not isinstance(key, str):
-            raise DocumentError(f"{label}: field names must be strings")
+            raise DocumentError("field names must be strings")
         full_name = f"{prefix}{key}"
         if "." in key and not free_form:
-            raise DocumentError(f"{label}: unknown field {full_name!r}")
+            raise DocumentError(f"unknown field {full_name!r}")
         field = by_name.get(full_name)
         if field is None:
             if free_form:
                 if not isinstance(value, str):
-                    raise DocumentError(f"{label}: free-form field {full_name!r} must be a string")
+                    raise DocumentError(f"free-form field {full_name!r} must be a string")
                 continue
-            raise DocumentError(f"{label}: unknown field {full_name!r}")
-        _validate_field(by_name, field, value, inside_array=inside_array, label=label)
+            raise DocumentError(f"unknown field {full_name!r}")
+        _validate_field(by_name, field, value, inside_array=inside_array)
 
-    _validate_required(by_name, obj, prefix=prefix, parent_name=parent_name, label=label)
+    _validate_required(by_name, obj, prefix=prefix, parent_name=parent_name)
     if prefix == "":
         try:
             validate_document_id(obj.get("id"))
         except ValueError as exc:
-            raise DocumentError(f"{label}: {exc}") from exc
+            raise DocumentError(str(exc)) from exc
 
 
 def _validate_required(
@@ -85,7 +87,6 @@ def _validate_required(
     *,
     prefix: str,
     parent_name: str | None,
-    label: str,
 ) -> None:
     """Require the fields declared required at this object level."""
     for name, field in by_name.items():
@@ -95,7 +96,7 @@ def _validate_required(
         if field_parent != parent_name:
             continue
         if name[len(prefix):] not in obj:
-            raise DocumentError(f"{label}: required field {name!r} is missing")
+            raise DocumentError(f"required field {name!r} is missing")
 
 
 def _validate_field(
@@ -104,19 +105,18 @@ def _validate_field(
     value: Any,
     *,
     inside_array: bool,
-    label: str,
 ) -> None:
     """Validate one field value; array-ness is implied inside an object array."""
     if value is None:
-        raise DocumentError(f"{label}: field {field.name!r} cannot be null")
+        raise DocumentError(f"field {field.name!r} cannot be null")
     if field.type is FieldType.OBJECT:
-        _validate_object_value(by_name, field, value, inside_array=inside_array, label=label)
+        _validate_object_value(by_name, field, value, inside_array=inside_array)
         return
     if field.array and not inside_array:
-        for element in _as_array(field, value, label):
-            _validate_scalar(field, element, label)
+        for element in _as_array(field, value):
+            _validate_scalar(field, element)
         return
-    _validate_scalar(field, value, label)
+    _validate_scalar(field, value)
 
 
 def _validate_object_value(
@@ -125,35 +125,32 @@ def _validate_object_value(
     value: Any,
     *,
     inside_array: bool,
-    label: str,
 ) -> None:
     """Validate an object, or an object array, and descend into its children."""
     if field.array and not inside_array:
-        for element in _as_array(field, value, label):
+        for element in _as_array(field, value):
             if not isinstance(element, Mapping):
-                raise DocumentError(f"{label}: field {field.name!r} must contain objects")
-            _validate_object(by_name, element, prefix=f"{field.name}.", label=label)
+                raise DocumentError(f"field {field.name!r} must contain objects")
+            _validate_object(by_name, element, prefix=f"{field.name}.")
         return
     if not isinstance(value, Mapping):
-        raise DocumentError(f"{label}: field {field.name!r} must be an object")
-    _validate_object(by_name, value, prefix=f"{field.name}.", label=label)
+        raise DocumentError(f"field {field.name!r} must be an object")
+    _validate_object(by_name, value, prefix=f"{field.name}.")
 
 
-def _as_array(field: Field, value: Any, label: str) -> Sequence[Any]:
+def _as_array(field: Field, value: Any) -> Sequence[Any]:
     """Require a list or tuple, not a string or bytes."""
     if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
-        raise DocumentError(f"{label}: field {field.name!r} must be an array")
+        raise DocumentError(f"field {field.name!r} must be an array")
     return value
 
 
-def _validate_scalar(field: Field, value: Any, label: str) -> None:
+def _validate_scalar(field: Field, value: Any) -> None:
     """Validate one value against the field's base type."""
     if value is None:
-        raise DocumentError(f"{label}: field {field.name!r} cannot be null")
+        raise DocumentError(f"field {field.name!r} cannot be null")
     if not _matches_type(field.type, value):
-        raise DocumentError(
-            f"{label}: field {field.name!r} must be {_type_name(field.type)}"
-        )
+        raise DocumentError(f"field {field.name!r} must be {_type_name(field.type)}")
 
 
 def _matches_type(field_type: FieldType, value: Any) -> bool:

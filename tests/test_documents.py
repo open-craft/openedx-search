@@ -57,6 +57,15 @@ def test_a_document_must_be_a_mapping():
         validate_document(SCHEMA, "not a mapping")
 
 
+def test_error_names_the_document_once():
+    """The label is applied at the validation boundary, not at every raise site."""
+    document = _document()
+    document.pop("title")
+
+    with pytest.raises(DocumentError, match=r"^document 'doc-1': required field 'title' is missing$"):
+        validate_document(SCHEMA, document)
+
+
 def test_missing_required_field():
     """Required fields must be present."""
     document = _document()
@@ -167,7 +176,7 @@ def test_declared_child_of_free_form_object_is_typed():
 
 def test_invalid_document_id_is_rejected():
     """The id is engine-safe."""
-    with pytest.raises(DocumentError, match="invalid document id"):
+    with pytest.raises(DocumentError, match=r"^document 'a:b': invalid document id"):
         validate_document(SCHEMA, _document(id="a:b"))
 
 
