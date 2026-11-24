@@ -1,0 +1,397 @@
+"""
+Meilisearch implementation of the adapter contract.
+
+The adapter owns the physical index name, the settings rendered from the
+declared schema and the lifecycle tasks. It talks to the HTTP API directly, so
+the library keeps Django as its only dependency.
+
+Meilisearch applies index changes asynchronously and answers with a task id.
+The lifecycle methods wait for their tasks, because a deploy that ignores a
+failed settings update would keep serving the old settings. Writes return the
+task id to the caller as a ``WriteReceipt``; ``check_write`` performs one poll
+and never sleeps, since scheduling belongs to the indexing worker.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timedelta
+from typing import Any
+from urllib.parse import quote
+
+from .adapters import (
+    Adapter,
+    AdapterError,
+    CredentialScope,
+    DocumentBatch,
+    FilterExpression,
+    FilterValue,
+    PrimaryKey,
+    RebuildTarget,
+    ReconcileResult,
+    SearchCredential,
+    SearchResult,
+    WriteFailed,
+    WriteReceipt,
+    register_adapter,
+)
+from .config import BackendConfig
+from .registry import UseCaseRegistration
+from .schema import Searchable
+from .transport import HTTPTransport, TransportError
+
+__all__ = [
+    "MEILISEARCH_RANKING_RULES",
+    "MeilisearchAdapter",
+    "register",
+    "render_filter",
+]
+
+# `sort` first: an explicit sort must outrank relevance, and the rule is inert
+# when the query carries no `sort` parameter. The remaining rules are the
+# engine defaults, pinned so a deployment's own ranking changes are reverted.
+MEILISEARCH_RANKING_RULES = ("sort", "words", "typo", "proximity", "attribute", "exactness")
+
+TASK_TIMEOUT = 30.0
+TASK_POLL_INTERVAL = 0.1
+MAX_POLL_INTERVAL = 1.0
+PAGE_SIZE = 1000
+
+
+class MeilisearchAdapter(Adapter):
+    """The adapter for one Meilisearch deployment."""
+
+    def __init__(
+        self,
+        registration: UseCaseRegistration,
+        backend: BackendConfig,
+        *,
+        transport: HTTPTransport | None = None,
+    ) -> None:
+        """Build the transport unless the caller supplies one for testing."""
+        super().__init__(registration, backend)
+        self._transport = transport or HTTPTransport(
+            backend.url,
+            {"Authorization": f"Bearer {backend.api_key}"},
+        )
+
+    def validate_schema(self) -> None:
+        """Meilisearch represents every schema the neutral model allows."""
+
+    def settings(self) -> dict[str, Any]:
+        """
+        Render the declared schema as Meilisearch index settings.
+
+        The primary key is always filterable so ``id`` filters behave the same
+        on both engines, where Typesense filters any declared field.
+        """
+        searchable = sorted(
+            (
+                (
+                    field.capabilities.searchable.order
+                    if isinstance(field.capabilities.searchable, Searchable)
+                    else None,
+                    position,
+                    field.name,
+                )
+                for position, field in enumerate(self.schema.fields)
+                if field.capabilities.searchable
+            ),
+            key=lambda entry: (entry[0] is None, entry[0] or 0, entry[1]),
+        )
+        filterable = ["id"] + [
+            field.name for field in self.schema.fields if field.capabilities.filterable
+        ]
+        sortable = [
+            field.name for field in self.schema.fields if field.capabilities.sortable
+        ]
+        return {
+            "searchableAttributes": [entry[2] for entry in searchable],
+            "filterableAttributes": list(dict.fromkeys(filterable)),
+            "sortableAttributes": sortable,
+            "rankingRules": list(MEILISEARCH_RANKING_RULES),
+        }
+
+    def reconcile(self) -> ReconcileResult:
+        """Create the index when missing and apply settings that drifted."""
+        changed = False
+        live_index = self._index(self.index)
+        if live_index is None:
+            self._create_index(self.index)
+            changed = True
+        else:
+            self._require_primary_key(self.index, live_index)
+        live = self._settings(self.index)
+        desired = self.settings()
+        differences = {
+            name: value for name, value in desired.items() if live.get(name) != value
+        }
+        if differences:
+            self._update_settings(self.index, differences)
+            changed = True
+        return ReconcileResult(index=self.index, version=self.schema.version, changed=changed)
+
+    def begin_rebuild(self, target: RebuildTarget) -> None:
+        """Remove leftover targets and create an empty target index."""
+        self._remove_leftovers(target)
+        self._create_index(target.name)
+
+    def commit_rebuild(self, target: RebuildTarget) -> None:
+        """Swap the target into the live name and delete the old documents."""
+        if self._index(self.index) is None:
+            self._create_index(self.index)
+        self._swap(self.index, target.name)
+        self._delete_index(target.name)
+
+    def abort_rebuild(self, target: RebuildTarget) -> None:
+        """Delete the target; a target that is already gone is not an error."""
+        self._delete_index(target.name, missing_ok=True)
+
+    def upsert(self, documents: DocumentBatch, target: RebuildTarget | None = None) -> WriteReceipt:
+        """Submit the batch to the live index or to a rebuild target."""
+        uid = self._uid(target)
+        payload = [_jsonable(document) for document in documents]
+        response = self._transport.request(
+            "POST",
+            f"/indexes/{_quote(uid)}/documents",
+            body=payload,
+        )
+        return _receipt(response)
+
+    def delete(
+        self,
+        primary_keys: Sequence[PrimaryKey] | None = None,
+        *,
+        filter: FilterExpression | None = None,  # pylint: disable=redefined-builtin
+        target: RebuildTarget | None = None,
+    ) -> WriteReceipt:
+        """Delete by primary key or by the rendered filter expression."""
+        uid = self._uid(target)
+        path = f"/indexes/{_quote(uid)}/documents"
+        if primary_keys is not None:
+            response = self._transport.request(
+                "POST",
+                f"{path}/delete-batch",
+                body=list(primary_keys),
+            )
+        elif filter is not None:
+            response = self._transport.request(
+                "POST",
+                f"{path}/delete",
+                body={"filter": render_filter(filter)},
+            )
+        else:
+            raise ValueError("delete requires primary_keys or filter")
+        return _receipt(response)
+
+    def check_write(self, receipt: WriteReceipt) -> WriteReceipt:
+        """Poll the task once; a failed or canceled task raises ``WriteFailed``."""
+        if receipt.complete or receipt.task_id is None:
+            return receipt
+        task = self._transport.request("GET", f"/tasks/{receipt.task_id}")
+        return _poll_receipt(receipt, task)
+
+    def search(self, query: Any) -> SearchResult:
+        """Run one search once the query model exists (FAL-4406)."""
+        raise NotImplementedError("Meilisearch search lands with the query API")
+
+    def mint_credential(
+        self,
+        scope: CredentialScope,
+        expires_in: timedelta,
+    ) -> SearchCredential:
+        """Mint a tenant token once the credential API exists (FAL-4409)."""
+        raise NotImplementedError("Meilisearch tenant tokens land with the credential API")
+
+    def _uid(self, target: RebuildTarget | None) -> str:
+        """Return the index a write goes to."""
+        return target.name if target is not None else self.index
+
+    def _index(self, uid: str) -> Mapping[str, Any] | None:
+        """Return the index description, or ``None`` when it does not exist."""
+        try:
+            index = self._transport.request("GET", f"/indexes/{_quote(uid)}")
+        except TransportError as error:
+            if error.not_found:
+                return None
+            raise
+        if not isinstance(index, Mapping):
+            raise AdapterError("Meilisearch returned an invalid index description")
+        return index
+
+    def _require_primary_key(self, uid: str, index: Mapping[str, Any]) -> None:
+        """Reject an existing index whose primary key is not the declared ``id``."""
+        primary_key = index.get("primaryKey")
+        if primary_key is not None and primary_key != "id":
+            raise AdapterError(
+                f"index {uid!r} uses primary key {primary_key!r}, expected 'id'"
+            )
+
+    def _create_index(self, uid: str) -> None:
+        """Create the index with the primary key and apply the settings."""
+        response = self._transport.request(
+            "POST",
+            "/indexes",
+            body={"uid": uid, "primaryKey": "id"},
+        )
+        self._wait(response)
+        self._update_settings(uid, self.settings())
+
+    def _settings(self, uid: str) -> Mapping[str, Any]:
+        """Return the live settings of an index."""
+        settings = self._transport.request("GET", f"/indexes/{_quote(uid)}/settings")
+        if not isinstance(settings, Mapping):
+            raise AdapterError("Meilisearch returned invalid index settings")
+        return settings
+
+    def _update_settings(self, uid: str, settings: Mapping[str, Any]) -> None:
+        """Patch the given settings and wait for the task."""
+        response = self._transport.request(
+            "PATCH",
+            f"/indexes/{_quote(uid)}/settings",
+            body=dict(settings),
+        )
+        self._wait(response)
+
+    def _swap(self, first: str, second: str) -> None:
+        """Swap two indexes and wait for the task."""
+        response = self._transport.request(
+            "POST",
+            "/swap-indexes",
+            body=[{"indexes": [first, second]}],
+        )
+        self._wait(response)
+
+    def _delete_index(self, uid: str, *, missing_ok: bool = False) -> None:
+        """Delete an index and wait for the task."""
+        try:
+            response = self._transport.request("DELETE", f"/indexes/{_quote(uid)}")
+        except TransportError as error:
+            if missing_ok and error.not_found:
+                return
+            raise
+        self._wait(response)
+
+    def _remove_leftovers(self, target: RebuildTarget) -> None:
+        """Delete targets of this index and version other than ``target``."""
+        prefix = f"{target.index}_v{target.version}_"
+        for name in self._index_names():
+            if name.startswith(prefix) and name != target.name:
+                self._delete_index(name)
+
+    def _index_names(self) -> list[str]:
+        """List every index uid, one page at a time."""
+        names: list[str] = []
+        offset = 0
+        while True:
+            page = self._transport.request(
+                "GET",
+                f"/indexes?offset={offset}&limit={PAGE_SIZE}",
+            )
+            results = page.get("results") if isinstance(page, Mapping) else None
+            if not isinstance(results, list):
+                raise AdapterError("Meilisearch returned an invalid index list")
+            names.extend(
+                entry["uid"]
+                for entry in results
+                if isinstance(entry, Mapping) and isinstance(entry.get("uid"), str)
+            )
+            if len(results) < PAGE_SIZE:
+                return names
+            offset += len(results)
+
+    def _wait(self, response: object) -> None:
+        """Wait for a lifecycle task to succeed."""
+        task_id = _task_id(response)
+        deadline = time.monotonic() + TASK_TIMEOUT
+        interval = TASK_POLL_INTERVAL
+        while True:
+            task = self._transport.request("GET", f"/tasks/{task_id}")
+            status = task.get("status") if isinstance(task, Mapping) else None
+            if status == "succeeded":
+                return
+            if status in ("failed", "canceled"):
+                raise AdapterError(
+                    f"Meilisearch task {task_id} {status} ({_task_error(task)})"
+                )
+            if time.monotonic() > deadline:
+                raise AdapterError(
+                    f"Meilisearch task {task_id} did not finish within {TASK_TIMEOUT:g}s"
+                )
+            time.sleep(interval)
+            interval = min(interval * 2, MAX_POLL_INTERVAL)
+
+
+def render_filter(expression: FilterExpression) -> str:
+    """Render the abstract filter expression in Meilisearch syntax."""
+    groups = []
+    for group in expression:
+        terms = [
+            f"{term.field} IN [{', '.join(_literal(value) for value in term.values)}]"
+            for term in group.terms
+        ]
+        groups.append("(" + " OR ".join(terms) + ")")
+    return " AND ".join(groups)
+
+
+def register() -> None:
+    """Make the Meilisearch adapter the factory for its engine."""
+    register_adapter("meilisearch", MeilisearchAdapter, replace=True)
+
+
+def _quote(uid: str) -> str:
+    """Quote an index uid for a URL path."""
+    return quote(uid, safe="")
+
+
+def _receipt(response: object) -> WriteReceipt:
+    """Build a receipt from a write acknowledgment."""
+    task_id = _task_id(response)
+    return WriteReceipt(task_id=task_id)
+
+
+def _task_id(response: object) -> int:
+    """Return the task id of an asynchronous acknowledgment."""
+    task_id = response.get("taskUid") if isinstance(response, Mapping) else None
+    if isinstance(task_id, bool) or not isinstance(task_id, int):
+        raise AdapterError("Meilisearch did not acknowledge the request with a task")
+    return task_id
+
+
+def _task_error(task: object) -> str:
+    """Describe a failed task without including the response body."""
+    error = task.get("error") if isinstance(task, Mapping) else None
+    code = error.get("code") if isinstance(error, Mapping) else None
+    return code if isinstance(code, str) and code else "unknown error"
+
+
+def _poll_receipt(receipt: WriteReceipt, task: object) -> WriteReceipt:
+    """Map one task status to a receipt, raising when the write failed."""
+    status = task.get("status") if isinstance(task, Mapping) else None
+    if status == "succeeded":
+        return WriteReceipt(task_id=receipt.task_id, complete=True)
+    if status in ("failed", "canceled"):
+        raise WriteFailed(
+            f"Meilisearch task {receipt.task_id} {status} ({_task_error(task)})"
+        )
+    return WriteReceipt(task_id=receipt.task_id, complete=False)
+
+
+def _literal(value: FilterValue) -> str:
+    """Render one filter value in Meilisearch syntax."""
+    if isinstance(value, datetime):
+        return str(int(value.timestamp()))
+    return json.dumps(value)
+
+
+def _jsonable(value: Any) -> Any:
+    """Convert datetimes to POSIX seconds so the document is JSON-safe."""
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    if isinstance(value, Mapping):
+        return {key: _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
