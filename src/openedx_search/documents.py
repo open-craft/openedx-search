@@ -167,7 +167,7 @@ def _matches_type(field_type: FieldType, value: Any) -> bool:
         if isinstance(value, datetime):
             return value.tzinfo is not None and value.utcoffset() is not None
         return isinstance(value, (int, float)) and not isinstance(value, bool)
-    return False
+    return False  # pragma: no cover - objects are handled before the scalar check
 
 
 def _type_name(field_type: FieldType) -> str:

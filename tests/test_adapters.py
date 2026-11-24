@@ -160,6 +160,12 @@ def test_normalize_filter_expression_can_require_a_group():
         normalize_filter_expression((), raise_if_empty=True)
 
 
+def test_normalize_filter_expression_rejects_a_non_sequence():
+    """An integer is not a sequence of groups."""
+    with pytest.raises(ValueError, match="sequence of FilterGroup"):
+        normalize_filter_expression(1)  # type: ignore[arg-type]
+
+
 def test_rebuild_target_name_includes_a_generation():
     """Two rebuilds at the same version never share a target name."""
     first = RebuildTarget(index="studio_content", version=2, generation="20261104")

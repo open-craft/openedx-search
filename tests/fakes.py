@@ -30,19 +30,19 @@ class FakeAdapter(Adapter):
     def validate_schema(self) -> None:
         """Accept every schema."""
 
-    def reconcile(self) -> ReconcileResult:
+    def reconcile(self) -> ReconcileResult:  # pragma: no cover - not called by the API tests
         """Report no change."""
         return ReconcileResult(index=self.index, version=self.schema.version)
 
-    def begin_rebuild(self, target: RebuildTarget) -> None:
+    def begin_rebuild(self, target: RebuildTarget) -> None:  # pragma: no cover - not called by the API tests
         """Record the target creation."""
         self.calls.append(("begin_rebuild", target))
 
-    def commit_rebuild(self, target: RebuildTarget) -> None:
+    def commit_rebuild(self, target: RebuildTarget) -> None:  # pragma: no cover - not called by the API tests
         """Record the swap."""
         self.calls.append(("commit_rebuild", target))
 
-    def abort_rebuild(self, target: RebuildTarget) -> None:
+    def abort_rebuild(self, target: RebuildTarget) -> None:  # pragma: no cover - not called by the API tests
         """Record the abort."""
         self.calls.append(("abort_rebuild", target))
 
@@ -67,11 +67,15 @@ class FakeAdapter(Adapter):
         self.calls.append(("check_write", receipt))
         return WriteReceipt(complete=True)
 
-    def search(self, query: Any) -> SearchResult:
+    def search(self, query: Any) -> SearchResult:  # pragma: no cover - not called by the API tests
         """Return no hits."""
         return SearchResult(documents=(), total=0)
 
-    def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:
+    def mint_credential(  # pragma: no cover - not called by the API tests
+        self,
+        scope: CredentialScope,
+        expires_in: timedelta,
+    ) -> SearchCredential:
         """Return a fixed credential."""
         return SearchCredential(url="http://fake", index_name=self.index, api_key="key")
 

@@ -66,6 +66,12 @@ def test_error_names_the_document_once():
         validate_document(SCHEMA, document)
 
 
+def test_error_without_an_id_uses_a_generic_label():
+    """A document with no usable id is still named in the error."""
+    with pytest.raises(DocumentError, match=r"^document: required field 'id' is missing$"):
+        validate_document(SCHEMA, {})
+
+
 def test_missing_required_field():
     """Required fields must be present."""
     document = _document()
@@ -94,10 +100,25 @@ def test_null_is_rejected():
         validate_document(SCHEMA, _document(count=None))
 
 
+def test_null_array_element_is_rejected():
+    """Null inside an array is rejected by the element check."""
+    with pytest.raises(DocumentError, match="field 'tags' cannot be null"):
+        validate_document(SCHEMA, _document(tags=["a", None]))
+
+
 def test_unknown_field_is_rejected():
     """Undeclared fields are errors, not silently dropped."""
     with pytest.raises(DocumentError, match="unknown field 'extra'"):
         validate_document(SCHEMA, _document(extra="value"))
+
+
+def test_field_names_must_be_strings():
+    """A non-string key cannot be addressed by the engines."""
+    document = _document()
+    document[1] = "value"
+
+    with pytest.raises(DocumentError, match="field names must be strings"):
+        validate_document(SCHEMA, document)
 
 
 def test_unknown_nested_field_is_rejected():
@@ -125,6 +146,24 @@ def test_boolean_is_not_an_integer():
     """A bool is not a valid int32."""
     with pytest.raises(DocumentError, match="must be an integer"):
         validate_document(SCHEMA, _document(count=True))
+
+
+def test_float_field_rejects_a_string():
+    """The float type name appears in the error."""
+    with pytest.raises(DocumentError, match="field 'rating' must be a number"):
+        validate_document(SCHEMA, _document(rating="high"))
+
+
+def test_bool_field_rejects_a_string():
+    """The bool type name appears in the error."""
+    with pytest.raises(DocumentError, match="field 'active' must be a boolean"):
+        validate_document(SCHEMA, _document(active="yes"))
+
+
+def test_object_field_must_be_a_mapping():
+    """A declared object is not a string or an array."""
+    with pytest.raises(DocumentError, match="field 'details' must be an object"):
+        validate_document(SCHEMA, _document(details="not an object"))
 
 
 def test_naive_datetime_is_rejected():
