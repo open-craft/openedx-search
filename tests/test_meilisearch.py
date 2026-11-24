@@ -15,7 +15,7 @@ from openedx_search.adapters import (
     get_adapter,
 )
 from openedx_search.config import BackendConfig
-from openedx_search.meilisearch import MEILISEARCH_RANKING_RULES, MeilisearchAdapter, register, render_filter
+from openedx_search.meilisearch import MEILISEARCH_RANKING_RULES, PAGE_SIZE, MeilisearchAdapter, register, render_filter
 from openedx_search.registry import UseCaseRegistration
 from openedx_search.schema import Capabilities, Field, FieldType, IndexSchema, Searchable
 from openedx_search.transport import TransportError
@@ -32,6 +32,7 @@ class FakeTransport:
         """Start with the given responses, in order, and task statuses."""
         self.responses = list(responses or [])
         self.tasks = dict(tasks or {})
+        self.task_statuses = {}
         self.task_errors = {}
         self.requests = []
 
@@ -40,13 +41,15 @@ class FakeTransport:
         self.requests.append((method, path, body))
         if method == "GET" and path.startswith("/tasks/"):
             task_id = int(path.rsplit("/", 1)[1])
+            statuses = self.task_statuses.get(task_id)
+            status = statuses.pop(0) if statuses else self.tasks.get(task_id, "succeeded")
             return {
                 "taskUid": task_id,
-                "status": self.tasks.get(task_id, "succeeded"),
+                "status": status,
                 "error": self.task_errors.get(task_id),
             }
         if not self.responses:
-            raise AssertionError(f"unexpected request {method} {path}")
+            raise AssertionError(f"unexpected request {method} {path}")  # pragma: no cover
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -443,6 +446,113 @@ def test_mint_credential_is_deferred_to_the_credential_api():
     """Tenant tokens land with the credential contract."""
     with pytest.raises(NotImplementedError, match="credential API"):
         _adapter().mint_credential(scope=None, expires_in=None)
+
+
+def test_reconcile_propagates_a_transport_failure():
+    """A non-404 failure is not treated as a missing index."""
+    transport = FakeTransport([TransportError("unavailable", status=503)])
+
+    with pytest.raises(TransportError):
+        _adapter(transport=transport).reconcile()
+
+
+def test_reconcile_rejects_an_invalid_index_response():
+    """The index endpoint must return an object."""
+    transport = FakeTransport(["not a mapping"])
+
+    with pytest.raises(AdapterError, match="invalid index description"):
+        _adapter(transport=transport).reconcile()
+
+
+def test_reconcile_rejects_invalid_settings():
+    """The settings endpoint must return an object."""
+    transport = FakeTransport([{}, []])
+
+    with pytest.raises(AdapterError, match="invalid index settings"):
+        _adapter(transport=transport).reconcile()
+
+
+def test_reconcile_waits_for_a_processing_task(monkeypatch):
+    """A task that is still running is polled again after a backoff."""
+    sleeps = []
+    monkeypatch.setattr("openedx_search.meilisearch.time.sleep", sleeps.append)
+    live = _adapter().settings()
+    transport = FakeTransport(
+        [TransportError("missing", status=404), {"taskUid": 1}, {"taskUid": 2}, live]
+    )
+    transport.task_statuses[1] = ["processing", "succeeded"]
+
+    result = _adapter(transport=transport).reconcile()
+
+    assert result.changed
+    assert sleeps == [0.1]
+
+
+def test_reconcile_times_out_on_a_stuck_task(monkeypatch):
+    """A task that never finishes fails the lifecycle call."""
+    monkeypatch.setattr("openedx_search.meilisearch.TASK_TIMEOUT", 0)
+    monkeypatch.setattr("openedx_search.meilisearch.time.sleep", lambda seconds: None)
+    transport = FakeTransport(
+        [TransportError("missing", status=404), {"taskUid": 1}],
+        tasks={1: "processing"},
+    )
+
+    with pytest.raises(AdapterError, match="did not finish"):
+        _adapter(transport=transport).reconcile()
+
+
+def test_abort_rebuild_propagates_a_transport_failure():
+    """Only a missing target is tolerated."""
+    target = RebuildTarget(index="studio_content", version=1, generation="gen1")
+    transport = FakeTransport([TransportError("unavailable", status=503)])
+
+    with pytest.raises(TransportError):
+        _adapter(transport=transport).abort_rebuild(target)
+
+
+def test_begin_rebuild_rejects_an_invalid_index_list():
+    """The index list endpoint must return a results list."""
+    target = RebuildTarget(index="studio_content", version=1, generation="gen1")
+    transport = FakeTransport([{}])
+
+    with pytest.raises(AdapterError, match="invalid index list"):
+        _adapter(transport=transport).begin_rebuild(target)
+
+
+def test_index_list_is_paged():
+    """A full page is followed by the next offset."""
+    target = RebuildTarget(index="studio_content", version=1, generation="gen1")
+    first = {"results": [{"uid": f"other-{position}"} for position in range(PAGE_SIZE)]}
+    second = {"results": []}
+    transport = FakeTransport([first, second, {"taskUid": 1}, {"taskUid": 2}])
+
+    _adapter(transport=transport).begin_rebuild(target)
+
+    assert transport.paths()[:2] == [
+        ("GET", "/indexes?offset=0&limit=1000"),
+        ("GET", f"/indexes?offset={PAGE_SIZE}&limit=1000"),
+    ]
+    assert transport.requests[2][2] == {
+        "uid": "studio_content_v1_gen1",
+        "primaryKey": "id",
+    }
+
+
+def test_upsert_rejects_an_acknowledgment_without_a_task():
+    """A write must return a task id."""
+    transport = FakeTransport([{}])
+
+    with pytest.raises(AdapterError, match="did not acknowledge"):
+        _adapter(transport=transport).upsert([{"id": "doc"}])
+
+
+def test_upsert_renders_datetimes_inside_lists():
+    """A datetime nested in an array becomes POSIX seconds too."""
+    transport = FakeTransport([{"taskUid": 1}])
+
+    _adapter(transport=transport).upsert([{"id": "doc", "tags": ["a", MOMENT]}])
+
+    assert transport.requests[0][2] == [{"id": "doc", "tags": ["a", MOMENT_SECONDS]}]
 
 
 def test_register_resolves_the_adapter():

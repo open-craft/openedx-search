@@ -2,11 +2,11 @@
 
 import io
 import json
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
-from openedx_search.transport import HTTPTransport, TransportError
+from openedx_search.transport import HTTPTransport, TransportError, _NoRedirect
 
 
 class _Response(io.BytesIO):
@@ -127,3 +127,34 @@ def test_url_must_be_a_plain_http_endpoint(monkeypatch, url):
 
     with pytest.raises(ValueError):
         HTTPTransport(url, {"Authorization": "Bearer secret"})
+
+
+def test_transport_failure_is_retryable(monkeypatch):
+    """A connection failure has no status and may be retried."""
+    transport, _ = _transport(monkeypatch, URLError("refused"))
+
+    with pytest.raises(TransportError) as excinfo:
+        transport.request("GET", "/indexes")
+
+    assert excinfo.value.status is None
+    assert excinfo.value.retryable
+
+
+def test_redirects_are_refused():
+    """A redirect would forward the authorization header, so it is never followed."""
+    handler = _NoRedirect()
+
+    assert handler.redirect_request(None, None, 302, "Found", {}, "http://other") is None
+
+
+def test_timeout_must_be_positive():
+    """A zero or negative timeout is rejected."""
+    with pytest.raises(ValueError, match="timeout"):
+        HTTPTransport("http://engine:7700", {}, timeout=0)
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.5])
+def test_response_limit_must_be_a_positive_integer(value):
+    """The response bound is a positive integer, not a bool or a float."""
+    with pytest.raises(ValueError, match="max_response_bytes"):
+        HTTPTransport("http://engine:7700", {}, max_response_bytes=value)
