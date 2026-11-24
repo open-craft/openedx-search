@@ -11,6 +11,10 @@ from openedx_search.config import BackendConfig
 from openedx_search.registry import UseCaseNotRegistered, register_use_case
 from tests.fakes import SIMPLE_REGISTRATION, FakeAdapter
 
+# The fixture name is also the argument name pytest resolves, so every test
+# that takes it shadows the fixture function.
+# pylint: disable=redefined-outer-name
+
 FAKE_BACKENDS = {
     "default": {"engine": "fake", "url": "http://fake", "api_key": "secret"},
 }
@@ -87,7 +91,8 @@ def test_upsert_rejects_invalid_documents(fake_adapter):
     assert fake_adapter.calls == []
 
 
-def test_upsert_requires_a_batch(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_upsert_requires_a_batch():
     """A string is not a batch, and an empty batch is rejected."""
     with pytest.raises(ValueError, match="sequence"):
         upsert("simple", "not a batch")
@@ -95,7 +100,8 @@ def test_upsert_requires_a_batch(fake_adapter):
         upsert("simple", [])
 
 
-def test_upsert_unknown_use_case(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_upsert_unknown_use_case():
     """The registration must exist."""
     with pytest.raises(UseCaseNotRegistered):
         upsert("missing", [{"id": "doc-1", "title": "Hello"}])
@@ -117,7 +123,8 @@ def test_delete_by_filter(fake_adapter):
     assert fake_adapter.calls[-1] == ("delete", None, expression, None)
 
 
-def test_delete_requires_exactly_one_form(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_delete_requires_exactly_one_form():
     """A delete has keys or a filter, never both and never neither."""
     with pytest.raises(ValueError, match="exactly one"):
         delete("simple")
@@ -129,13 +136,15 @@ def test_delete_requires_exactly_one_form(fake_adapter):
         )
 
 
-def test_delete_rejects_a_string_filter(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_delete_rejects_a_string_filter():
     """A raw engine filter is not accepted."""
     with pytest.raises(ValueError, match="not a string"):
         delete("simple", filter="title = Hello")
 
 
-def test_delete_rejects_an_empty_filter(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_delete_rejects_an_empty_filter():
     """An empty filter would match everything."""
     with pytest.raises(ValueError, match="not be empty"):
         delete("simple", filter=())
@@ -151,13 +160,15 @@ def test_check_write_delegates(fake_adapter):
     assert fake_adapter.calls[-1] == ("check_write", receipt)
 
 
-def test_check_write_rejects_a_non_receipt(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_check_write_rejects_a_non_receipt():
     """The function only accepts a receipt from a write."""
     with pytest.raises(ValueError, match="WriteReceipt"):
         check_write("simple", "receipt")
 
 
-def test_check_write_unknown_use_case(fake_adapter):
+@pytest.mark.usefixtures("fake_adapter")
+def test_check_write_unknown_use_case():
     """The registration must exist."""
     with pytest.raises(UseCaseNotRegistered):
         check_write("missing", WriteReceipt())

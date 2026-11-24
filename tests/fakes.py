@@ -23,6 +23,7 @@ class FakeAdapter(Adapter):
     """An adapter that records calls instead of talking to an engine."""
 
     def __init__(self, registration, backend):
+        """Store the registration, backend and an empty call log."""
         super().__init__(registration, backend)
         self.calls: list[tuple[Any, ...]] = []
 
@@ -33,9 +34,9 @@ class FakeAdapter(Adapter):
         """Report no change."""
         return ReconcileResult(index=self.index, version=self.schema.version)
 
-    def begin_rebuild(self) -> RebuildTarget:
-        """Return a fixed target."""
-        return RebuildTarget(index=self.index, version=self.schema.version, generation="test")
+    def begin_rebuild(self, target: RebuildTarget) -> None:
+        """Record the target creation."""
+        self.calls.append(("begin_rebuild", target))
 
     def commit_rebuild(self, target: RebuildTarget) -> None:
         """Record the swap."""

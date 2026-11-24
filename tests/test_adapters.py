@@ -151,7 +151,7 @@ def test_credential_scope_requires_filter_groups():
 
 def test_normalize_filter_expression_allows_empty_by_default():
     """A credential scope can have no tenant filters."""
-    assert normalize_filter_expression(()) == ()
+    assert not normalize_filter_expression(())
 
 
 def test_normalize_filter_expression_can_require_a_group():
