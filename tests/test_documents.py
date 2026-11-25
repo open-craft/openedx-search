@@ -195,6 +195,21 @@ def test_object_array_elements_are_objects():
         validate_document(SCHEMA, _document(breadcrumbs=["one"]))
 
 
+def test_object_array_inside_an_object_array():
+    """An object array nested in an object array is iterated, not a single object."""
+    schema = IndexSchema(
+        name="nested_arrays",
+        fields=(
+            Field("id", FieldType.STRING, required=True),
+            Field("a", FieldType.OBJECT, array=True, required=True),
+            Field("a.b", FieldType.OBJECT, array=True),
+            Field("a.b.c", FieldType.STRING, array=True),
+        ),
+    )
+
+    validate_document(schema, {"id": "x", "a": [{"b": [{"c": "v"}]}]})
+
+
 def test_object_array_children_are_scalars_per_element():
     """The array flag on a child is implied by the parent array, not the value."""
     with pytest.raises(DocumentError, match="must be a string"):

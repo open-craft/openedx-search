@@ -110,7 +110,7 @@ def _validate_field(
     if value is None:
         raise DocumentError(f"field {field.name!r} cannot be null")
     if field.type is FieldType.OBJECT:
-        _validate_object_value(by_name, field, value, inside_array=inside_array)
+        _validate_object_value(by_name, field, value)
         return
     if field.array and not inside_array:
         for element in _as_array(field, value):
@@ -123,11 +123,9 @@ def _validate_object_value(
     by_name: dict[str, Field],
     field: Field,
     value: Any,
-    *,
-    inside_array: bool,
 ) -> None:
     """Validate an object, or an object array, and descend into its children."""
-    if field.array and not inside_array:
+    if field.array:
         for element in _as_array(field, value):
             if not isinstance(element, Mapping):
                 raise DocumentError(f"field {field.name!r} must contain objects")
