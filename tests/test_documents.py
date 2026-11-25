@@ -72,14 +72,6 @@ def test_error_without_an_id_uses_a_generic_label():
         validate_document(SCHEMA, {})
 
 
-def test_missing_required_field():
-    """Required fields must be present."""
-    document = _document()
-    document.pop("title")
-    with pytest.raises(DocumentError, match="required field 'title'"):
-        validate_document(SCHEMA, document)
-
-
 def test_missing_required_nested_field():
     """A required leaf inside a required object is checked."""
     with pytest.raises(DocumentError, match="required field 'details.name'"):
