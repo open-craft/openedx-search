@@ -64,6 +64,10 @@ def validate_document_id(value: object) -> str:
     """Return ``value`` when it is an engine-safe id, or raise ``ValueError``."""
     if not isinstance(value, str) or not DOCUMENT_ID_PATTERN.match(value):
         raise ValueError(f"invalid document id {value!r}")
+    if len(value) > MAX_DOCUMENT_ID_BYTES:
+        raise ValueError(
+            f"document id is {len(value)} bytes; maximum is {MAX_DOCUMENT_ID_BYTES}"
+        )
     return value
 
 

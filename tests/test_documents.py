@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from openedx_search.documents import DocumentError, validate_document, validate_documents
-from openedx_search.schema import Field, FieldType, IndexSchema
+from openedx_search.schema import MAX_DOCUMENT_ID_BYTES, Field, FieldType, IndexSchema
 
 SCHEMA = IndexSchema(
     name="documents",
@@ -217,6 +217,12 @@ def test_invalid_document_id_is_rejected():
     """The id is engine-safe."""
     with pytest.raises(DocumentError, match=r"^document 'a:b': invalid document id"):
         validate_document(SCHEMA, _document(id="a:b"))
+
+
+def test_too_long_document_id_is_rejected():
+    """An id above the filterable limit would fail only at the engine."""
+    with pytest.raises(DocumentError, match="maximum is 468"):
+        validate_document(SCHEMA, _document(id="a" * (MAX_DOCUMENT_ID_BYTES + 1)))
 
 
 def test_validate_documents_checks_every_document():

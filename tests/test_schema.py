@@ -83,6 +83,17 @@ def test_validate_document_id_rejects_non_strings():
         validate_document_id(1)
 
 
+def test_validate_document_id_accepts_the_maximum_length():
+    """The filterable limit itself is valid."""
+    assert validate_document_id("a" * MAX_DOCUMENT_ID_BYTES)
+
+
+def test_validate_document_id_rejects_an_id_over_the_limit():
+    """A filterable id above 468 bytes would fail only at the engine."""
+    with pytest.raises(ValueError, match="maximum is 468"):
+        validate_document_id("a" * (MAX_DOCUMENT_ID_BYTES + 1))
+
+
 def test_library_schema_is_valid():
     """The library schema is the union of the three library document shapes."""
     assert STUDIO_LIBRARY_SCHEMA.name == "studio_library"
