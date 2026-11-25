@@ -71,12 +71,9 @@ class FakeAdapter(Adapter):
         """Return no hits."""
         return SearchResult(documents=(), total=0)
 
-    def mint_credential(  # pragma: no cover - not called by the API tests
-        self,
-        scope: CredentialScope,
-        expires_in: timedelta,
-    ) -> SearchCredential:
-        """Return a fixed credential."""
+    def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:
+        """Record the request and return a fixed credential."""
+        self.calls.append(("mint_credential", scope, expires_in))
         return SearchCredential(url="http://fake", index_name=self.index, api_key="key")
 
 

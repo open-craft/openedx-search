@@ -192,7 +192,7 @@ def search(use_case: str, query: Any) -> SearchResult:
     raise NotImplementedError("search is implemented with the engine adapters")  # pragma: no cover
 
 
-def mint_credential(  # pylint: disable=unused-argument
+def mint_credential(
     use_case: str, scope: CredentialScope, expires_in: timedelta
 ) -> SearchCredential:
     """
@@ -209,6 +209,11 @@ def mint_credential(  # pylint: disable=unused-argument
     connection URL, and the index name belongs to the adapter, so the browser
     needs all three rather than a bare key.
     """
+    if not isinstance(scope, CredentialScope):
+        raise ValueError("scope must be a CredentialScope")
+    if not isinstance(expires_in, timedelta):
+        raise ValueError("expires_in must be a timedelta")
     if expires_in <= timedelta(0):
         raise ValueError("expires_in must be positive")
-    raise NotImplementedError("mint_credential is implemented with the engine adapters")  # pragma: no cover
+    registration = get_registration(use_case)
+    return get_adapter(registration).mint_credential(scope, expires_in)

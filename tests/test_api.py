@@ -5,7 +5,14 @@ from datetime import timedelta
 import pytest
 from django.test import override_settings
 
-from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, WriteReceipt, register_adapter
+from openedx_search.adapters import (
+    CredentialScope,
+    FilterGroup,
+    FilterTerm,
+    SearchCredential,
+    WriteReceipt,
+    register_adapter,
+)
 from openedx_search.api import DocumentError, check_write, delete, mint_credential, upsert
 from openedx_search.config import BackendConfig
 from openedx_search.registry import UseCaseNotRegistered, register_use_case
@@ -36,10 +43,45 @@ def fake_adapter():
         yield adapter
 
 
-def test_mint_credential_rejects_non_positive_expiry():
+def test_mint_credential_delegates(fake_adapter):
+    """The scope and lifetime reach the adapter and its credential is returned."""
+    scope = CredentialScope(filters=(FilterGroup((FilterTerm("org", ("openedx",)),)),))
+
+    credential = mint_credential("simple", scope, timedelta(hours=1))
+
+    assert credential == SearchCredential(url="http://fake", index_name="simple_index", api_key="key")
+    assert fake_adapter.calls[-1] == ("mint_credential", scope, timedelta(hours=1))
+
+
+def test_mint_credential_rejects_a_raw_scope(fake_adapter):
+    """A filter sequence is not a CredentialScope."""
+    with pytest.raises(ValueError, match="CredentialScope"):
+        mint_credential("simple", (), timedelta(hours=1))
+
+    assert fake_adapter.calls == []
+
+
+def test_mint_credential_rejects_a_non_timedelta_expiry(fake_adapter):
+    """A number of seconds is not a lifetime."""
+    with pytest.raises(ValueError, match="timedelta"):
+        mint_credential("simple", CredentialScope(), 3600)
+
+    assert fake_adapter.calls == []
+
+
+def test_mint_credential_rejects_non_positive_expiry(fake_adapter):
     """A credential must have a positive lifetime."""
     with pytest.raises(ValueError, match="must be positive"):
-        mint_credential("studio_course", CredentialScope(), timedelta(0))
+        mint_credential("simple", CredentialScope(), timedelta(0))
+
+    assert fake_adapter.calls == []
+
+
+@pytest.mark.usefixtures("fake_adapter")
+def test_mint_credential_unknown_use_case():
+    """The registration must exist."""
+    with pytest.raises(UseCaseNotRegistered):
+        mint_credential("missing", CredentialScope(), timedelta(hours=1))
 
 
 def test_upsert_validates_and_sends_the_batch(fake_adapter):
