@@ -6,7 +6,7 @@ import pytest
 from django.test import override_settings
 
 from openedx_search.adapters import CredentialScope, FilterGroup, FilterTerm, WriteReceipt, register_adapter
-from openedx_search.api import DocumentError, _normalize_primary_keys, check_write, delete, mint_credential, upsert
+from openedx_search.api import DocumentError, check_write, delete, mint_credential, upsert
 from openedx_search.config import BackendConfig
 from openedx_search.registry import UseCaseNotRegistered, register_use_case
 from tests.fakes import SIMPLE_REGISTRATION, FakeAdapter
@@ -42,39 +42,6 @@ def test_mint_credential_rejects_non_positive_expiry():
         mint_credential("studio_course", CredentialScope(), timedelta(0))
 
 
-def test_normalize_single_primary_key():
-    """A string is one key, not a sequence of characters."""
-    assert _normalize_primary_keys("abc") == ("abc",)
-
-
-def test_normalize_primary_key_sequence():
-    """A sequence is normalized to a tuple."""
-    assert _normalize_primary_keys(["a", "b"]) == ("a", "b")
-
-
-def test_normalize_empty_primary_keys():
-    """An empty sequence cannot become a delete."""
-    with pytest.raises(ValueError, match="must not be empty"):
-        _normalize_primary_keys([])
-
-
-def test_normalize_missing_primary_keys():
-    """None means the caller used the filter form."""
-    assert _normalize_primary_keys(None) is None
-
-
-def test_normalize_rejects_invalid_document_id():
-    """A colon fails the engines, so it fails before the adapter call."""
-    with pytest.raises(ValueError, match="invalid document id"):
-        _normalize_primary_keys("block-v1:edX+DemoX+type@html+block@abc")
-
-
-def test_normalize_rejects_invalid_document_id_in_sequence():
-    """Every key in a batch is validated."""
-    with pytest.raises(ValueError, match="invalid document id"):
-        _normalize_primary_keys(["valid-id", "block-v1:edX+DemoX"])
-
-
 def test_upsert_validates_and_sends_the_batch(fake_adapter):
     """A valid batch reaches the adapter and returns its receipt."""
     receipt = upsert("simple", [{"id": "doc-1", "title": "Hello"}])
@@ -107,25 +74,37 @@ def test_upsert_unknown_use_case():
         upsert("missing", [{"id": "doc-1", "title": "Hello"}])
 
 
-def test_delete_by_primary_keys(fake_adapter):
-    """Keys are normalized and passed as a tuple."""
-    delete("simple", ["doc-1", "doc-2"])
+@pytest.mark.parametrize(
+    ("primary_keys", "expected"),
+    [
+        ("doc-1", ("doc-1",)),
+        (["doc-1", "doc-2"], ("doc-1", "doc-2")),
+        (("doc-1",), ("doc-1",)),
+    ],
+)
+def test_delete_by_primary_keys(fake_adapter, primary_keys, expected):
+    """A key or a sequence is normalized to a tuple and reaches the adapter."""
+    delete("simple", primary_keys)
 
-    assert fake_adapter.calls[-1] == ("delete", ("doc-1", "doc-2"), None, None)
+    assert fake_adapter.calls[-1] == ("delete", expected, None, None)
 
 
-def test_delete_rejects_a_mapping_of_primary_keys(fake_adapter):
-    """A mapping is not a sequence; iterating it would delete its keys."""
-    with pytest.raises(ValueError, match="string or a sequence"):
-        delete("simple", {"doc-1": "x"})
-
-    assert fake_adapter.calls == []
-
-
-def test_delete_rejects_a_scalar_primary_key(fake_adapter):
-    """A scalar is a type error, not a silent no-op."""
-    with pytest.raises(ValueError, match="string or a sequence"):
-        delete("simple", 1)
+@pytest.mark.parametrize(
+    ("primary_keys", "message"),
+    [
+        ([], "must not be empty"),
+        ("a:b", "invalid document id"),
+        (["valid-id", "a:b"], "invalid document id"),
+        ({"doc-1": "x"}, "string or a sequence"),
+        (1, "string or a sequence"),
+        (b"doc-1", "string or a sequence"),
+        ("a" * 469, "maximum is 468"),
+    ],
+)
+def test_delete_rejects_invalid_primary_keys(fake_adapter, primary_keys, message):
+    """Nothing reaches the adapter when a key is invalid."""
+    with pytest.raises(ValueError, match=message):
+        delete("simple", primary_keys)
 
     assert fake_adapter.calls == []
 
