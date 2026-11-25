@@ -89,6 +89,8 @@ def _normalize_primary_keys(
         return None
     if isinstance(primary_keys, str):
         return (validate_document_id(primary_keys),)
+    if isinstance(primary_keys, (bytes, bytearray)) or not isinstance(primary_keys, Sequence):
+        raise ValueError("primary_keys must be a string or a sequence of strings")
     keys = tuple(primary_keys)
     if not keys:
         raise ValueError("primary_keys must not be empty")

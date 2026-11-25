@@ -114,6 +114,22 @@ def test_delete_by_primary_keys(fake_adapter):
     assert fake_adapter.calls[-1] == ("delete", ("doc-1", "doc-2"), None, None)
 
 
+def test_delete_rejects_a_mapping_of_primary_keys(fake_adapter):
+    """A mapping is not a sequence; iterating it would delete its keys."""
+    with pytest.raises(ValueError, match="string or a sequence"):
+        delete("simple", {"doc-1": "x"})
+
+    assert fake_adapter.calls == []
+
+
+def test_delete_rejects_a_scalar_primary_key(fake_adapter):
+    """A scalar is a type error, not a silent no-op."""
+    with pytest.raises(ValueError, match="string or a sequence"):
+        delete("simple", 1)
+
+    assert fake_adapter.calls == []
+
+
 def test_delete_by_filter(fake_adapter):
     """The abstract filter expression reaches the adapter unchanged."""
     expression = (FilterGroup((FilterTerm("title", ("Hello",)),)),)
