@@ -14,10 +14,13 @@ and never sleeps, since scheduling belongs to the indexing worker.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import time
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
@@ -202,8 +205,26 @@ class MeilisearchAdapter(Adapter):
         scope: CredentialScope,
         expires_in: timedelta,
     ) -> SearchCredential:
-        """Mint a tenant token once the credential API exists (FAL-4409)."""
-        raise NotImplementedError("Meilisearch tenant tokens land with the credential API")
+        """
+        Mint a tenant token for the live index.
+
+        ADR 0002: the parent key is ``search_api_key`` when set, otherwise the
+        write ``api_key``; either must be listed by the engine and allow
+        ``search``. The master key is not listed and cannot sign a token. The
+        token embeds the scope's filters for the live index and expires after
+        ``expires_in``.
+        """
+        parent_key = self.backend.search_api_key or self.backend.api_key
+        key_uid = self._tenant_key(parent_key)
+        search_rules: dict[str, Any] = {self.index: {}}
+        if scope.filters:
+            search_rules[self.index]["filter"] = render_filter(scope.filters)
+        token = _tenant_token(key_uid, parent_key, search_rules, _now() + expires_in)
+        return SearchCredential(
+            url=self.backend.public_url or self.backend.url,
+            index_name=self.index,
+            api_key=token,
+        )
 
     def _uid(self, target: RebuildTarget | None) -> str:
         """Return the index a write goes to."""
@@ -302,6 +323,27 @@ class MeilisearchAdapter(Adapter):
                 return names
             offset += len(results)
 
+    def _tenant_key(self, key: str) -> str:
+        """Return the uid of the key that signs tenant tokens."""
+        page = self._transport.request("GET", "/keys?limit=1000")
+        results = page.get("results") if isinstance(page, Mapping) else None
+        if not isinstance(results, list):
+            raise AdapterError("Meilisearch returned an invalid key list")
+        for entry in results:
+            if not isinstance(entry, Mapping) or entry.get("key") != key:
+                continue
+            uid = entry.get("uid")
+            if not isinstance(uid, str) or not uid:
+                raise AdapterError("Meilisearch returned an invalid key uid")
+            actions = entry.get("actions")
+            if not isinstance(actions, list) or ("*" not in actions and "search" not in actions):
+                raise AdapterError("the tenant token key must allow search")
+            return uid
+        raise AdapterError(
+            "Meilisearch did not list the tenant token key; use a listed API key "
+            "or configure search_api_key"
+        )
+
     def _wait(self, response: object) -> None:
         """Wait for a lifecycle task to succeed."""
         task_id = _task_id(response)
@@ -395,3 +437,33 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_jsonable(item) for item in value]
     return value
+
+
+def _now() -> datetime:
+    """Return the current time in UTC."""
+    return datetime.now(timezone.utc)
+
+
+def _tenant_token(
+    api_key_uid: str,
+    api_key: str,
+    search_rules: Mapping[str, Any],
+    expires_at: datetime,
+) -> str:
+    """Sign a Meilisearch tenant token with HMAC-SHA256."""
+    header = {"typ": "JWT", "alg": "HS256"}
+    payload = {
+        "apiKeyUid": api_key_uid,
+        "searchRules": search_rules,
+        "exp": int(expires_at.timestamp()),
+    }
+    header_part = _base64url(json.dumps(header, separators=(",", ":")).encode())
+    payload_part = _base64url(json.dumps(payload, separators=(",", ":")).encode())
+    signing_input = f"{header_part}.{payload_part}".encode()
+    signature = hmac.new(api_key.encode(), signing_input, hashlib.sha256).digest()
+    return f"{header_part}.{payload_part}.{_base64url(signature)}"
+
+
+def _base64url(data: bytes) -> str:
+    """Encode bytes as unpadded base64url."""
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")

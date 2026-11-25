@@ -1,15 +1,21 @@
 """Tests for the Meilisearch adapter."""
 
-from datetime import datetime, timezone
+import base64
+import hashlib
+import hmac
+import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from django.test import override_settings
 
 from openedx_search.adapters import (
     AdapterError,
+    CredentialScope,
     FilterGroup,
     FilterTerm,
     RebuildTarget,
+    SearchCredential,
     WriteFailed,
     WriteReceipt,
     get_adapter,
@@ -23,6 +29,14 @@ from tests.fixtures import STUDIO_COURSE
 
 MOMENT = datetime(2026, 1, 1, tzinfo=timezone.utc)
 MOMENT_SECONDS = 1767225600
+TENANT_KEY = "test-key"
+TENANT_UID = "00000000-0000-4000-8000-000000000000"
+TENANT_TOKEN = (
+    "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9"
+    ".eyJhcGlLZXlVaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDAiLCJzZWFyY2hSdWxlcyI6"
+    "eyJzdHVkaW9fY29udGVudCI6eyJmaWx0ZXIiOiIob3JnIElOIFtcIm9wZW5lZHhcIl0pIn19LCJleHAiOjE3OTg3NjE2MDB9"
+    ".tlqBwpZqVc4MbxgZuulCkLPOyJO_OdTQLahR7Swqy8g"
+)
 
 
 class FakeTransport:
@@ -74,6 +88,44 @@ def _adapter(registration=STUDIO_COURSE, transport=None):
         api_key="secret",
     )
     return MeilisearchAdapter(registration, backend, transport=transport or FakeTransport())
+
+
+def _decode_token(token):
+    """Decode a tenant token payload without verifying it."""
+    payload = token.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+
+def _verify_token(token, key):
+    """Verify a tenant token signature with its parent key."""
+    header, payload, signature = token.split(".")
+    expected = base64.urlsafe_b64encode(
+        hmac.new(key.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()
+    ).decode("ascii").rstrip("=")
+    assert signature == expected
+
+
+def _key_page(key=TENANT_KEY, *, uid=TENANT_UID, actions=("search",)):
+    """Build a /keys page with one key."""
+    return {
+        "results": [{"uid": uid, "key": key, "actions": list(actions), "indexes": ["*"]}],
+        "offset": 0,
+        "limit": 1000,
+        "total": 1,
+    }
+
+
+def _tenant_adapter(transport, *, api_key=TENANT_KEY, search_api_key=None):
+    """Build an adapter whose backend can mint tenant tokens."""
+    backend = BackendConfig(
+        name="default",
+        engine="meilisearch",
+        url="http://engine:7700",
+        public_url="https://search.example.com",
+        api_key=api_key,
+        search_api_key=search_api_key,
+    )
+    return MeilisearchAdapter(STUDIO_COURSE, backend, transport=transport)
 
 
 def test_settings_render_the_schema():
@@ -442,10 +494,115 @@ def test_search_is_deferred_to_the_query_api():
         _adapter().search("anything")
 
 
-def test_mint_credential_is_deferred_to_the_credential_api():
-    """Tenant tokens land with the credential contract."""
-    with pytest.raises(NotImplementedError, match="credential API"):
-        _adapter().mint_credential(scope=None, expires_in=None)
+def test_mint_credential_matches_the_meilisearch_reference(monkeypatch):
+    """The token is byte-identical to the official client's output."""
+    monkeypatch.setattr(
+        "openedx_search.meilisearch._now",
+        lambda: datetime(2026, 12, 31, tzinfo=timezone.utc),
+    )
+    transport = FakeTransport([_key_page()])
+    scope = CredentialScope(filters=(FilterGroup((FilterTerm("org", ("openedx",)),)),))
+
+    credential = _tenant_adapter(transport).mint_credential(scope, timedelta(days=1))
+
+    assert credential == SearchCredential(
+        url="https://search.example.com",
+        index_name="studio_content",
+        api_key=TENANT_TOKEN,
+    )
+    assert transport.paths() == [("GET", "/keys?limit=1000")]
+
+
+def test_mint_credential_without_filters_allows_the_index(monkeypatch):
+    """An empty scope searches the whole index but no other index."""
+    monkeypatch.setattr(
+        "openedx_search.meilisearch._now",
+        lambda: datetime(2027, 1, 1, tzinfo=timezone.utc),
+    )
+    transport = FakeTransport([_key_page()])
+
+    credential = _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
+
+    assert _decode_token(credential.api_key)["searchRules"] == {"studio_content": {}}
+
+
+def test_mint_credential_signs_with_the_search_key(monkeypatch):
+    """search_api_key is the parent when configured and signs the token."""
+    monkeypatch.setattr(
+        "openedx_search.meilisearch._now",
+        lambda: datetime(2027, 1, 1, tzinfo=timezone.utc),
+    )
+    transport = FakeTransport([_key_page(key="search-key")])
+    adapter = _tenant_adapter(transport, api_key="write-key", search_api_key="search-key")
+
+    credential = adapter.mint_credential(CredentialScope(), timedelta(hours=1))
+
+    _verify_token(credential.api_key, "search-key")
+    assert _decode_token(credential.api_key)["apiKeyUid"] == TENANT_UID
+
+
+def test_mint_credential_requires_a_listed_key():
+    """The master key is not listed, so it cannot sign a tenant token."""
+    transport = FakeTransport([{"results": [], "offset": 0, "limit": 1000, "total": 0}])
+
+    with pytest.raises(AdapterError, match="did not list"):
+        _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
+
+
+def test_mint_credential_skips_other_keys():
+    """Only the configured key is used, even when it is not the first entry."""
+    transport = FakeTransport(
+        [
+            {
+                "results": [
+                    {"uid": "other", "key": "other-key", "actions": ["search"], "indexes": ["*"]},
+                    {"uid": TENANT_UID, "key": TENANT_KEY, "actions": ["search"], "indexes": ["*"]},
+                ],
+                "offset": 0,
+                "limit": 1000,
+                "total": 2,
+            }
+        ]
+    )
+
+    credential = _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
+
+    assert _decode_token(credential.api_key)["apiKeyUid"] == TENANT_UID
+
+
+def test_mint_credential_expires_after_the_requested_lifetime():
+    """The token expiry is the current time plus the requested lifetime."""
+    transport = FakeTransport([_key_page()])
+    before = int(datetime.now(timezone.utc).timestamp())
+
+    credential = _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
+
+    after = int(datetime.now(timezone.utc).timestamp())
+    assert before + 3600 <= _decode_token(credential.api_key)["exp"] <= after + 3600
+
+
+def test_mint_credential_requires_a_search_key():
+    """A key without the search action cannot mint a tenant token."""
+    transport = FakeTransport([_key_page(actions=("documents.add",))])
+
+    with pytest.raises(AdapterError, match="allow search"):
+        _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
+
+
+def test_mint_credential_rejects_an_invalid_key_list():
+    """The key list must be an object with a results list."""
+    transport = FakeTransport([{}])
+
+    with pytest.raises(AdapterError, match="invalid key list"):
+        _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
+
+
+def test_mint_credential_requires_a_valid_key_uid():
+    """An entry without a uid cannot be used as the issuer."""
+    transport = FakeTransport([_key_page(uid="")])
+
+    with pytest.raises(AdapterError, match="invalid key uid"):
+        _tenant_adapter(transport).mint_credential(CredentialScope(), timedelta(hours=1))
 
 
 def test_reconcile_propagates_a_transport_failure():
