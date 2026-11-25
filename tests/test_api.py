@@ -53,31 +53,22 @@ def test_mint_credential_delegates(fake_adapter):
     assert fake_adapter.calls[-1] == ("mint_credential", scope, timedelta(hours=1))
 
 
-def test_mint_credential_rejects_a_raw_scope(fake_adapter):
-    """A filter sequence is not a CredentialScope."""
-    with pytest.raises(ValueError, match="CredentialScope"):
-        mint_credential("simple", (), timedelta(hours=1))
+@pytest.mark.parametrize(
+    ("scope", "expires_in", "message"),
+    [
+        ((), timedelta(hours=1), "CredentialScope"),
+        (CredentialScope(), 3600, "timedelta"),
+        (CredentialScope(), timedelta(0), "must be positive"),
+    ],
+)
+def test_mint_credential_rejects_invalid_arguments(fake_adapter, scope, expires_in, message):
+    """Invalid input fails before the adapter is resolved."""
+    with pytest.raises(ValueError, match=message):
+        mint_credential("simple", scope, expires_in)
 
     assert fake_adapter.calls == []
 
 
-def test_mint_credential_rejects_a_non_timedelta_expiry(fake_adapter):
-    """A number of seconds is not a lifetime."""
-    with pytest.raises(ValueError, match="timedelta"):
-        mint_credential("simple", CredentialScope(), 3600)
-
-    assert fake_adapter.calls == []
-
-
-def test_mint_credential_rejects_non_positive_expiry(fake_adapter):
-    """A credential must have a positive lifetime."""
-    with pytest.raises(ValueError, match="must be positive"):
-        mint_credential("simple", CredentialScope(), timedelta(0))
-
-    assert fake_adapter.calls == []
-
-
-@pytest.mark.usefixtures("fake_adapter")
 def test_mint_credential_unknown_use_case():
     """The registration must exist."""
     with pytest.raises(UseCaseNotRegistered):
