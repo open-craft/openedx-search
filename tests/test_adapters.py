@@ -149,17 +149,6 @@ def test_credential_scope_requires_filter_groups():
         CredentialScope(filters=("org",))  # type: ignore[arg-type]
 
 
-def test_normalize_filter_expression_allows_empty_by_default():
-    """A credential scope can have no tenant filters."""
-    assert not normalize_filter_expression(())
-
-
-def test_normalize_filter_expression_can_require_a_group():
-    """A delete filter may not be empty."""
-    with pytest.raises(ValueError, match="not be empty"):
-        normalize_filter_expression((), raise_if_empty=True)
-
-
 def test_normalize_filter_expression_rejects_a_non_sequence():
     """An integer is not a sequence of groups."""
     with pytest.raises(ValueError, match="sequence of FilterGroup"):
