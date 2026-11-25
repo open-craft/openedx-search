@@ -29,10 +29,12 @@ __all__ = [
     "FilterGroup",
     "FilterTerm",
     "FilterValue",
+    "MAX_QUERY_HITS",
     "PrimaryKey",
     "RebuildTarget",
     "ReconcileResult",
     "SearchCredential",
+    "SearchQuery",
     "SearchResult",
     "UnsupportedSchema",
     "WriteFailed",
@@ -200,6 +202,44 @@ class ReconcileResult:
     changed: bool = False
 
 
+MAX_QUERY_HITS = 100
+
+
+@dataclass(frozen=True)
+class SearchQuery:
+    """
+    One search request: filters plus a bounded page of hits or a count.
+
+    ``filters`` is the same expression ``delete`` accepts: groups are combined
+    with AND and the terms inside a group with OR. ``limit`` caps the returned
+    documents and never exceeds ``MAX_QUERY_HITS``. There is no offset yet, so a
+    caller that only needs a count asks for ``count_only`` rather than an
+    unbounded page; a count-only query returns no documents. Whether ``total``
+    is exact is an engine property reported in ``SearchResult.total_is_exact``,
+    never assumed from the engine's success.
+    """
+
+    filters: FilterExpression = ()
+    limit: int = 20
+    count_only: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate the filter expression and the page size."""
+        if isinstance(self.filters, (str, bytes)):
+            raise ValueError("filters must be a sequence of FilterGroup, not a string")
+        filters = tuple(self.filters)
+        for group in filters:
+            if not isinstance(group, FilterGroup):
+                raise ValueError("filters must contain FilterGroup instances")
+        object.__setattr__(self, "filters", filters)
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int):
+            raise ValueError("limit must be an integer")
+        if not 1 <= self.limit <= MAX_QUERY_HITS:
+            raise ValueError(f"limit must be between 1 and {MAX_QUERY_HITS}")
+        if not isinstance(self.count_only, bool):
+            raise ValueError("count_only must be a bool")
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """Documents and count accuracy from one search."""
@@ -289,8 +329,8 @@ class Adapter(ABC):
         """Perform one status check; never sleep or retry."""
 
     @abstractmethod
-    def search(self, query: Any) -> SearchResult:
-        """Run one search. The query model is specified separately."""
+    def search(self, query: SearchQuery) -> SearchResult:
+        """Run one search using the typed query model."""
 
     @abstractmethod
     def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:

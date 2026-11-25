@@ -5,8 +5,10 @@ ADR 0002, Decision 4: consumers use this module rather than talking to an
 adapter. The functions resolve the registration and backend internally. The
 registry helpers in ``openedx_search.registry`` are not part of this surface.
 
-These functions are currently signatures and contracts only; the
-implementations land with the engine adapters.
+``search`` is implemented for the two engines as an experimental read-only
+slice (see :mod:`openedx_search.engines`). The write, rebuild and credential
+functions are still contracts; their implementations land with the engine
+adapters.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 from .adapters import (
     CredentialScope,
@@ -23,9 +25,13 @@ from .adapters import (
     PrimaryKey,
     RebuildTarget,
     SearchCredential,
+    SearchQuery,
     SearchResult,
     WriteReceipt,
 )
+from .config import get_backend_config
+from .engines import run_search
+from .registry import get_registration
 from .schema import document_id_from_key, validate_document_id
 
 __all__ = [
@@ -163,15 +169,22 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     raise NotImplementedError("rebuild is implemented with the engine adapters")  # pragma: no cover
 
 
-def search(use_case: str, query: Any) -> SearchResult:
+def search(use_case: str, query: SearchQuery) -> SearchResult:
     """
-    Run one query through the adapter.
+    Run one query against the use case's existing index.
 
     This is for maintenance and conformance, not the frontend search path. The
     browser queries the engine directly with a scoped credential, so this does
-    not proxy the frontend's searches. The query model lands with the query API.
+    not proxy the frontend's searches. The registration supplies the logical
+    index name and the schema used to validate filter fields, and the resolved
+    backend selects the engine. Nothing is created or configured. Whether
+    ``total`` is exact is reported by the engine in
+    ``SearchResult.total_is_exact``: Meilisearch's count is an estimate,
+    Typesense's is exact.
     """
-    raise NotImplementedError("search is implemented with the engine adapters")  # pragma: no cover
+    registration = get_registration(use_case)
+    backend = get_backend_config(use_case)
+    return run_search(backend, registration.index, registration.schema, query)
 
 
 def mint_credential(  # pylint: disable=unused-argument
