@@ -10,10 +10,12 @@ from openedx_search.adapters import (
     FilterGroup,
     FilterTerm,
     SearchCredential,
+    SearchQuery,
+    SearchResult,
     WriteReceipt,
     register_adapter,
 )
-from openedx_search.api import DocumentError, check_write, delete, mint_credential, upsert
+from openedx_search.api import DocumentError, check_write, delete, mint_credential, search, upsert
 from openedx_search.config import BackendConfig
 from openedx_search.registry import UseCaseNotRegistered, register_use_case
 from tests.fakes import SIMPLE_REGISTRATION, FakeAdapter
@@ -209,3 +211,27 @@ def test_check_write_unknown_use_case():
     """The registration must exist."""
     with pytest.raises(UseCaseNotRegistered):
         check_write("missing", WriteReceipt())
+
+
+def test_search_delegates_the_query_to_the_adapter(fake_adapter):
+    """The typed query reaches the adapter unchanged and its result is returned."""
+    query = SearchQuery(text="hello", limit=5)
+
+    result = search("simple", query)
+
+    assert fake_adapter.calls == [("search", query)]
+    assert result == SearchResult(documents=(), total=0)
+
+
+def test_search_requires_a_typed_query(fake_adapter):
+    """A raw mapping is not a query, so nothing reaches the adapter."""
+    with pytest.raises(ValueError, match="SearchQuery"):
+        search("simple", {"text": "hello"})
+
+    assert fake_adapter.calls == []
+
+
+def test_search_unknown_use_case():
+    """The registration must exist before an adapter is resolved."""
+    with pytest.raises(UseCaseNotRegistered):
+        search("missing", SearchQuery())

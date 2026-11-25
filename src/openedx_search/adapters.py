@@ -32,6 +32,7 @@ __all__ = [
     "FilterGroup",
     "FilterTerm",
     "FilterValue",
+    "MAX_QUERY_HITS",
     "PrimaryKey",
     "RebuildTarget",
     "ReconcileResult",
@@ -225,6 +226,53 @@ class ReconcileResult:
     changed: bool = False
 
 
+# Meilisearch pages within its ``pagination.maxTotalHits`` setting, 1000 by
+# default, so a larger page would be silently truncated. One bounded page also
+# keeps a consumer from asking for the whole index by accident.
+MAX_QUERY_HITS = 1000
+
+
+@dataclass(frozen=True)
+class SearchQuery:
+    """
+    One search request: text, an optional page and exact filters.
+
+    ``text`` is the query string; an empty string matches every document.
+    ``filters`` is the same expression ``delete`` accepts, so groups are combined
+    with AND and the terms inside a group with OR. ``offset`` and ``limit`` select
+    one page, and ``limit`` never exceeds ``MAX_QUERY_HITS``. ``count_only`` asks
+    for the total without the page's documents, which an engine can answer
+    without transferring a page; the migrator is the caller.
+
+    A term with one value is an exact match (``id = x``); a term with several
+    values is an IN list (``id IN [x, y, z]``). Whether ``total`` is exact is an
+    engine property, reported in ``SearchResult.total_is_exact``, never assumed
+    from a successful request.
+    """
+
+    text: str = ""
+    filters: FilterExpression = ()
+    offset: int = 0
+    limit: int = 20
+    count_only: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate the query and freeze the filter groups."""
+        if not isinstance(self.text, str):
+            raise ValueError("text must be a string")
+        object.__setattr__(self, "filters", normalize_filter_expression(self.filters))
+        if isinstance(self.offset, bool) or not isinstance(self.offset, int) or self.offset < 0:
+            raise ValueError("offset must be a non-negative integer")
+        if (
+            isinstance(self.limit, bool)
+            or not isinstance(self.limit, int)
+            or not 1 <= self.limit <= MAX_QUERY_HITS
+        ):
+            raise ValueError(f"limit must be between 1 and {MAX_QUERY_HITS}")
+        if not isinstance(self.count_only, bool):
+            raise ValueError("count_only must be a bool")
+
+
 @dataclass(frozen=True)
 class SearchResult:
     """Documents and count accuracy from one search."""
@@ -314,8 +362,8 @@ class Adapter(ABC):
         """Perform one status check; never sleep or retry."""
 
     @abstractmethod
-    def search(self, query: Any) -> SearchResult:
-        """Run one search. The query model is specified separately."""
+    def search(self, query: SearchQuery) -> SearchResult:
+        """Run one search with the typed query model."""
 
     @abstractmethod
     def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:

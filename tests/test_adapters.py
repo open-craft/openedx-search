@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 import pytest
 
 from openedx_search.adapters import (
+    MAX_QUERY_HITS,
     CredentialScope,
     FilterGroup,
     FilterTerm,
     RebuildTarget,
     SearchCredential,
+    SearchQuery,
     normalize_filter_expression,
 )
 from openedx_search.config import BackendConfig
@@ -220,3 +222,44 @@ def test_filter_term_rejects_none():
     """Documents carry no nulls, so a null filter value has no meaning."""
     with pytest.raises(ValueError, match="invalid filter value"):
         FilterTerm("last_published", (None,))
+
+
+def test_search_query_defaults_to_the_first_page():
+    """An empty query matches everything and asks for the first page."""
+    query = SearchQuery()
+
+    assert (query.text, query.filters, query.offset, query.limit, query.count_only) == (
+        "",
+        (),
+        0,
+        20,
+        False,
+    )
+
+
+def test_search_query_freezes_filters():
+    """A list of groups passed at construction is frozen into a tuple."""
+    group = FilterGroup((FilterTerm("id", ("doc-1",)),))
+
+    query = SearchQuery(text="course", filters=[group], offset=10, limit=10)
+
+    assert query.filters == (group,)
+    assert (query.text, query.offset, query.limit) == ("course", 10, 10)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"text": None}, "text must be a string"),
+        ({"filters": "id = x"}, "not a string"),
+        ({"offset": -1}, "non-negative integer"),
+        ({"offset": 1.0}, "non-negative integer"),
+        ({"limit": 0}, "limit must be between"),
+        ({"limit": MAX_QUERY_HITS + 1}, "limit must be between"),
+        ({"count_only": "yes"}, "count_only must be a bool"),
+    ],
+)
+def test_search_query_rejects_invalid_parts(kwargs, message):
+    """The query is typed and bounded before any adapter sees it."""
+    with pytest.raises(ValueError, match=message):
+        SearchQuery(**kwargs)

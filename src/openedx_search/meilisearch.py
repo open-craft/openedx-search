@@ -35,6 +35,7 @@ from .adapters import (
     RebuildTarget,
     ReconcileResult,
     SearchCredential,
+    SearchQuery,
     SearchResult,
     WriteFailed,
     WriteReceipt,
@@ -196,9 +197,44 @@ class MeilisearchAdapter(Adapter):
         task = self._transport.request("GET", f"/tasks/{receipt.task_id}")
         return _poll_receipt(receipt, task)
 
-    def search(self, query: Any) -> SearchResult:
-        """Run one search once the query model exists (FAL-4406)."""
-        raise NotImplementedError("Meilisearch search lands with the query API")
+    def search(self, query: SearchQuery) -> SearchResult:
+        """
+        Run one query against the live index.
+
+        The request carries the text, one page and the rendered filter. A
+        count-only query sends ``limit: 0``, so the engine counts without
+        transferring a page. ``estimatedTotalHits`` is an estimate capped by
+        the index's ``pagination.maxTotalHits``, so it is never reported as
+        exact.
+        """
+        payload: dict[str, Any] = {
+            "offset": query.offset,
+            "limit": 0 if query.count_only else query.limit,
+        }
+        if query.text:
+            payload["q"] = query.text
+        if query.filters:
+            payload["filter"] = render_filter(query.filters)
+        response = self._transport.request(
+            "POST",
+            f"/indexes/{_quote(self.index)}/search",
+            body=payload,
+        )
+        if not isinstance(response, Mapping):
+            raise AdapterError("Meilisearch returned an invalid search response")
+        total = response.get("estimatedTotalHits")
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise AdapterError("Meilisearch returned no estimated total")
+        documents: tuple[Mapping[str, Any], ...] = ()
+        if not query.count_only:
+            hits = response.get("hits")
+            if not isinstance(hits, list):
+                raise AdapterError("Meilisearch returned invalid search hits")
+            for hit in hits:
+                if not isinstance(hit, Mapping):
+                    raise AdapterError("Meilisearch returned an invalid search hit")
+            documents = tuple(dict(hit) for hit in hits)
+        return SearchResult(documents=documents, total=total, total_is_exact=False)
 
     def mint_credential(
         self,

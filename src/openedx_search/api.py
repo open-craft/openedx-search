@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 from .adapters import (
     CredentialScope,
@@ -21,6 +21,7 @@ from .adapters import (
     PrimaryKey,
     RebuildTarget,
     SearchCredential,
+    SearchQuery,
     SearchResult,
     WriteReceipt,
     get_adapter,
@@ -37,6 +38,7 @@ __all__ = [
     "RebuildInProgress",
     "RebuildResult",
     "SearchCredential",
+    "SearchQuery",
     "check_write",
     "delete",
     "document_id_from_key",
@@ -181,15 +183,22 @@ def rebuild(use_case: str, document_source: DocumentSource) -> RebuildResult:
     raise NotImplementedError("rebuild is implemented with the engine adapters")  # pragma: no cover
 
 
-def search(use_case: str, query: Any) -> SearchResult:
+def search(use_case: str, query: SearchQuery) -> SearchResult:
     """
-    Run one query through the adapter.
+    Run one query through the adapter for the use case's backend.
 
-    This is for maintenance and conformance, not the frontend search path. The
-    browser queries the engine directly with a scoped credential, so this does
-    not proxy the frontend's searches. The query model lands with the query API.
+    ``query`` is a :class:`SearchQuery`: the text, one page and the exact
+    filters. This is for maintenance and conformance, not the frontend search
+    path. The browser queries the engine directly with a scoped credential, so
+    this does not proxy the frontend's searches. Nothing is created or
+    configured, so the index must already exist under its logical name. Whether
+    ``total`` is exact is the engine's property, reported in
+    ``SearchResult.total_is_exact``.
     """
-    raise NotImplementedError("search is implemented with the engine adapters")  # pragma: no cover
+    if not isinstance(query, SearchQuery):
+        raise ValueError("query must be a SearchQuery")
+    registration = get_registration(use_case)
+    return get_adapter(registration).search(query)
 
 
 def mint_credential(

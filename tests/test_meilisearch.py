@@ -16,6 +16,8 @@ from openedx_search.adapters import (
     FilterTerm,
     RebuildTarget,
     SearchCredential,
+    SearchQuery,
+    SearchResult,
     WriteFailed,
     WriteReceipt,
     get_adapter,
@@ -488,10 +490,94 @@ def test_abort_rebuild_deletes_the_target():
     ]
 
 
-def test_search_is_deferred_to_the_query_api():
-    """The read side lands with its own contract."""
-    with pytest.raises(NotImplementedError, match="query API"):
-        _adapter().search("anything")
+def test_search_sends_the_text_page_and_filters():
+    """The text, the page and the rendered filter reach the engine in one request."""
+    transport = FakeTransport([{"hits": [{"id": "doc-1"}], "estimatedTotalHits": 2}])
+    query = SearchQuery(
+        text="display name",
+        filters=(
+            FilterGroup((FilterTerm("id", ("doc-1", "doc-2")),)),
+            FilterGroup((FilterTerm("block_type", ("video",)),)),
+        ),
+        offset=20,
+        limit=10,
+    )
+
+    result = _adapter(transport=transport).search(query)
+
+    assert transport.requests == [
+        (
+            "POST",
+            "/indexes/studio_content/search",
+            {
+                "offset": 20,
+                "limit": 10,
+                "q": "display name",
+                "filter": '(id IN ["doc-1", "doc-2"]) AND (block_type IN ["video"])',
+            },
+        ),
+    ]
+    assert result == SearchResult(
+        documents=({"id": "doc-1"},),
+        total=2,
+        total_is_exact=False,
+    )
+
+
+def test_search_reads_a_second_page():
+    """Offset moves the window, so the second request returns the next documents."""
+    transport = FakeTransport(
+        [
+            {"hits": [{"id": "doc-1"}, {"id": "doc-2"}], "estimatedTotalHits": 4},
+            {"hits": [{"id": "doc-3"}, {"id": "doc-4"}], "estimatedTotalHits": 4},
+        ]
+    )
+    adapter = _adapter(transport=transport)
+
+    first = adapter.search(SearchQuery(limit=2))
+    second = adapter.search(SearchQuery(limit=2, offset=2))
+
+    assert [document["id"] for document in first.documents] == ["doc-1", "doc-2"]
+    assert [document["id"] for document in second.documents] == ["doc-3", "doc-4"]
+    assert [request[2]["offset"] for request in transport.requests] == [0, 2]
+
+
+def test_search_single_id_filter_is_an_exact_match():
+    """One value is the ID = x case, rendered as a one-value IN clause."""
+    transport = FakeTransport([{"hits": [{"id": "doc-1"}], "estimatedTotalHits": 1}])
+
+    _adapter(transport=transport).search(
+        SearchQuery(filters=(FilterGroup((FilterTerm("id", ("doc-1",)),)),))
+    )
+
+    assert transport.requests[0][2]["filter"] == '(id IN ["doc-1"])'
+
+
+def test_search_count_only_drops_the_page():
+    """limit 0 asks for the total, returns no documents and never claims exactness."""
+    transport = FakeTransport([{"hits": [{"id": "doc-1"}], "estimatedTotalHits": 7}])
+
+    result = _adapter(transport=transport).search(SearchQuery(count_only=True))
+
+    assert transport.requests[0][2] == {"offset": 0, "limit": 0}
+    assert result == SearchResult(documents=(), total=7, total_is_exact=False)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        [],
+        {},
+        {"hits": [], "estimatedTotalHits": "7"},
+        {"hits": [], "estimatedTotalHits": True},
+        {"hits": "none", "estimatedTotalHits": 7},
+        {"hits": ["not a document"], "estimatedTotalHits": 7},
+    ],
+)
+def test_search_rejects_an_invalid_response(response):
+    """A malformed body fails instead of returning a wrong result."""
+    with pytest.raises(AdapterError):
+        _adapter(transport=FakeTransport([response])).search(SearchQuery())
 
 
 def test_mint_credential_matches_the_meilisearch_reference(monkeypatch):

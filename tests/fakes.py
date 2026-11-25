@@ -12,6 +12,7 @@ from openedx_search.adapters import (
     RebuildTarget,
     ReconcileResult,
     SearchCredential,
+    SearchQuery,
     SearchResult,
     WriteReceipt,
 )
@@ -67,8 +68,9 @@ class FakeAdapter(Adapter):
         self.calls.append(("check_write", receipt))
         return WriteReceipt(complete=True)
 
-    def search(self, query: Any) -> SearchResult:  # pragma: no cover - not called by the API tests
-        """Return no hits."""
+    def search(self, query: SearchQuery) -> SearchResult:
+        """Record the query and return no hits."""
+        self.calls.append(("search", query))
         return SearchResult(documents=(), total=0)
 
     def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:
