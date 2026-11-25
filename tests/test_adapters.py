@@ -1,75 +1,26 @@
 """Tests for the adapter contract types."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
 from openedx_search.adapters import (
-    Adapter,
     CredentialScope,
     FilterGroup,
     FilterTerm,
     RebuildTarget,
-    ReconcileResult,
     SearchCredential,
-    SearchResult,
-    WriteReceipt,
     normalize_filter_expression,
 )
 from openedx_search.config import BackendConfig
+from tests.fakes import FakeAdapter
 from tests.fixtures import STUDIO_COURSE
-
-
-class _StubAdapter(Adapter):  # pragma: no cover
-    """A minimal adapter that exercises the base class."""
-
-    def validate_schema(self) -> None:
-        """Accept every schema."""
-
-    def reconcile(self) -> ReconcileResult:
-        """Report no change."""
-        return ReconcileResult(index=self.index, version=self.schema.version)
-
-    def begin_rebuild(self, target: RebuildTarget) -> None:
-        """Do nothing."""
-
-    def commit_rebuild(self, target: RebuildTarget) -> None:
-        """Do nothing."""
-
-    def abort_rebuild(self, target: RebuildTarget) -> None:
-        """Do nothing."""
-
-    def upsert(self, documents, target: RebuildTarget | None = None) -> WriteReceipt:
-        """Report a complete write."""
-        return WriteReceipt(complete=True)
-
-    def delete(
-        self,
-        primary_keys=None,
-        *,
-        filter=None,  # pylint: disable=redefined-builtin
-        target: RebuildTarget | None = None,
-    ) -> WriteReceipt:
-        """Report a complete delete."""
-        return WriteReceipt(complete=True)
-
-    def check_write(self, receipt: WriteReceipt) -> WriteReceipt:
-        """Return the receipt."""
-        return receipt
-
-    def search(self, query) -> SearchResult:
-        """Return no hits."""
-        return SearchResult(documents=(), total=0)
-
-    def mint_credential(self, scope: CredentialScope, expires_in: timedelta) -> SearchCredential:
-        """Return a fixed credential."""
-        return SearchCredential(url="http://fake", index_name=self.index, api_key="key")
 
 
 def test_adapter_exposes_its_registration():
     """The base class stores the registration and exposes index and schema."""
     backend = BackendConfig(name="fake", engine="meilisearch", url="http://localhost:7700", api_key="key")
-    adapter = _StubAdapter(STUDIO_COURSE, backend)
+    adapter = FakeAdapter(STUDIO_COURSE, backend)
 
     assert adapter.index == STUDIO_COURSE.index
     assert adapter.schema is STUDIO_COURSE.schema
