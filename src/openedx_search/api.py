@@ -28,7 +28,8 @@ from .adapters import (
     normalize_filter_expression,
 )
 from .documents import DocumentError, validate_documents
-from .registry import UseCaseRegistration, get_registration
+from .filters import validate_filter_fields
+from .registry import get_registration
 from .schema import document_id_from_key, validate_document_id
 
 __all__ = [
@@ -99,34 +100,6 @@ def _normalize_primary_keys(
     return tuple(validate_document_id(key) for key in keys)
 
 
-def _check_filter_fields(
-    registration: UseCaseRegistration,
-    expression: FilterExpression | None,
-) -> None:
-    """
-    Reject filter terms the registration's schema cannot filter.
-
-    ``id`` is always filterable because the adapters make it so. Every other
-    field must be declared and carry the ``filterable`` capability; a nested
-    field is checked by its declared name, such as ``tags.level0``.
-    """
-    if not expression:
-        return
-    for group in expression:
-        for term in group.terms:
-            if term.field == "id":
-                continue
-            try:
-                field = registration.schema.field(term.field)
-            except KeyError:
-                raise ValueError(
-                    f"filter field {term.field!r} is not declared in schema "
-                    f"{registration.schema.name!r}"
-                ) from None
-            if not field.capabilities.filterable:
-                raise ValueError(f"filter field {term.field!r} is not declared filterable")
-
-
 def delete(
     use_case: str,
     primary_keys: PrimaryKey | Sequence[PrimaryKey] | None = None,
@@ -155,7 +128,8 @@ def delete(
     )
     if (keys is None) == (expression is None):
         raise ValueError("exactly one of primary_keys and filter is required")
-    _check_filter_fields(registration, expression)
+    if expression is not None:
+        validate_filter_fields(registration.schema, expression)
     return get_adapter(registration).delete(primary_keys=keys, filter=expression)
 
 
@@ -230,7 +204,7 @@ def search(use_case: str, query: SearchQuery) -> SearchResult:
     if not isinstance(query, SearchQuery):
         raise ValueError("query must be a SearchQuery")
     registration = get_registration(use_case)
-    _check_filter_fields(registration, query.filters)
+    validate_filter_fields(registration.schema, query.filters)
     return get_adapter(registration).search(query)
 
 
