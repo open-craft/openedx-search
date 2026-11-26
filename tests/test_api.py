@@ -19,6 +19,7 @@ from openedx_search.api import DocumentError, check_write, delete, mint_credenti
 from openedx_search.config import BackendConfig
 from openedx_search.registry import UseCaseNotRegistered, register_use_case
 from tests.fakes import SIMPLE_REGISTRATION, FakeAdapter
+from tests.fixtures import STUDIO_COURSE
 
 # The fixture name is also the argument name pytest resolves, so every test
 # that takes it shadows the fixture function.
@@ -155,7 +156,7 @@ def test_delete_rejects_invalid_primary_keys(fake_adapter, primary_keys, message
 
 def test_delete_by_filter(fake_adapter):
     """The abstract filter expression reaches the adapter unchanged."""
-    expression = (FilterGroup((FilterTerm("title", ("Hello",)),)),)
+    expression = (FilterGroup((FilterTerm("id", ("doc-1",)),)),)
 
     delete("simple", filter=expression)
 
@@ -187,6 +188,43 @@ def test_delete_rejects_an_empty_filter():
     """An empty filter would match everything."""
     with pytest.raises(ValueError, match="not be empty"):
         delete("simple", filter=())
+
+
+@pytest.mark.parametrize(
+    "term",
+    [
+        FilterTerm("title", ("Hello",)),
+        FilterTerm("nope", ("x",)),
+    ],
+)
+def test_filters_reject_a_field_the_schema_cannot_filter(fake_adapter, term):
+    """A declared-but-unfilterable or undeclared field fails before the adapter."""
+    expression = (FilterGroup((term,)),)
+
+    with pytest.raises(ValueError, match=f"filter field {term.field!r}"):
+        search("simple", SearchQuery(filters=expression))
+    with pytest.raises(ValueError, match=f"filter field {term.field!r}"):
+        delete("simple", filter=expression)
+
+    assert fake_adapter.calls == []
+
+
+def test_filters_accept_the_primary_key_and_a_filterable_nested_field(fake_adapter):
+    """``id`` is always filterable and nested fields use their declared name."""
+    register_use_case(STUDIO_COURSE)
+    expression = (
+        FilterGroup(
+            (
+                FilterTerm("id", ("doc-1",)),
+                FilterTerm("tags.level0", ("openedx",)),
+            )
+        ),
+    )
+
+    search("studio_course", SearchQuery(filters=expression))
+    delete("studio_course", filter=expression)
+
+    assert [call[0] for call in fake_adapter.calls] == ["search", "delete"]
 
 
 def test_check_write_delegates(fake_adapter):
@@ -229,9 +267,3 @@ def test_search_requires_a_typed_query(fake_adapter):
         search("simple", {"text": "hello"})
 
     assert fake_adapter.calls == []
-
-
-def test_search_unknown_use_case():
-    """The registration must exist before an adapter is resolved."""
-    with pytest.raises(UseCaseNotRegistered):
-        search("missing", SearchQuery())

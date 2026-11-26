@@ -32,11 +32,11 @@ __all__ = [
     "FilterGroup",
     "FilterTerm",
     "FilterValue",
-    "MAX_QUERY_HITS",
     "PrimaryKey",
     "RebuildTarget",
     "ReconcileResult",
     "SearchCredential",
+    "SearchQuery",
     "SearchResult",
     "UnsupportedSchema",
     "WriteFailed",
@@ -226,23 +226,17 @@ class ReconcileResult:
     changed: bool = False
 
 
-# Meilisearch pages within its ``pagination.maxTotalHits`` setting, 1000 by
-# default, so a larger page would be silently truncated. One bounded page also
-# keeps a consumer from asking for the whole index by accident.
-MAX_QUERY_HITS = 1000
-
-
 @dataclass(frozen=True)
 class SearchQuery:
     """
-    One search request: text, an optional page and exact filters.
+    One search request: text, one page and exact filters.
 
     ``text`` is the query string; an empty string matches every document.
     ``filters`` is the same expression ``delete`` accepts, so groups are combined
-    with AND and the terms inside a group with OR. ``offset`` and ``limit`` select
-    one page, and ``limit`` never exceeds ``MAX_QUERY_HITS``. ``count_only`` asks
-    for the total without the page's documents, which an engine can answer
-    without transferring a page; the migrator is the caller.
+    with AND and the terms inside a group with OR. ``offset`` is the number of
+    documents to skip and ``limit`` the positive number to return. The adapter
+    rejects a page its engine cannot return in full, so an engine cap never
+    silently truncates a page.
 
     A term with one value is an exact match (``id = x``); a term with several
     values is an IN list (``id IN [x, y, z]``). Whether ``total`` is exact is an
@@ -254,7 +248,6 @@ class SearchQuery:
     filters: FilterExpression = ()
     offset: int = 0
     limit: int = 20
-    count_only: bool = False
 
     def __post_init__(self) -> None:
         """Validate the query and freeze the filter groups."""
@@ -263,14 +256,8 @@ class SearchQuery:
         object.__setattr__(self, "filters", normalize_filter_expression(self.filters))
         if isinstance(self.offset, bool) or not isinstance(self.offset, int) or self.offset < 0:
             raise ValueError("offset must be a non-negative integer")
-        if (
-            isinstance(self.limit, bool)
-            or not isinstance(self.limit, int)
-            or not 1 <= self.limit <= MAX_QUERY_HITS
-        ):
-            raise ValueError(f"limit must be between 1 and {MAX_QUERY_HITS}")
-        if not isinstance(self.count_only, bool):
-            raise ValueError("count_only must be a bool")
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int) or self.limit < 1:
+            raise ValueError("limit must be a positive integer")
 
 
 @dataclass(frozen=True)

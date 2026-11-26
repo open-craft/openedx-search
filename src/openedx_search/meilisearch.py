@@ -201,15 +201,22 @@ class MeilisearchAdapter(Adapter):
         """
         Run one query against the live index.
 
-        The request carries the text, one page and the rendered filter. A
-        count-only query sends ``limit: 0``, so the engine counts without
-        transferring a page. ``estimatedTotalHits`` is an estimate capped by
-        the index's ``pagination.maxTotalHits``, so it is never reported as
-        exact.
+        The request carries the text, one page and the rendered filter. The
+        page is checked first against the live ``pagination.maxTotalHits`` from
+        ``GET /indexes/{uid}/settings``, which costs one extra request per
+        search, so a window Meilisearch would clamp is rejected instead of
+        returning a short page. ``estimatedTotalHits`` is an estimate capped by
+        that setting, so it is never reported as exact.
         """
+        max_total_hits = self._max_total_hits(self.index)
+        if query.offset + query.limit > max_total_hits:
+            raise AdapterError(
+                f"Meilisearch index {self.index!r} returns at most {max_total_hits} hits; "
+                f"offset {query.offset} plus limit {query.limit} exceeds it"
+            )
         payload: dict[str, Any] = {
             "offset": query.offset,
-            "limit": 0 if query.count_only else query.limit,
+            "limit": query.limit,
         }
         if query.text:
             payload["q"] = query.text
@@ -225,16 +232,17 @@ class MeilisearchAdapter(Adapter):
         total = response.get("estimatedTotalHits")
         if isinstance(total, bool) or not isinstance(total, int) or total < 0:
             raise AdapterError("Meilisearch returned no estimated total")
-        documents: tuple[Mapping[str, Any], ...] = ()
-        if not query.count_only:
-            hits = response.get("hits")
-            if not isinstance(hits, list):
-                raise AdapterError("Meilisearch returned invalid search hits")
-            for hit in hits:
-                if not isinstance(hit, Mapping):
-                    raise AdapterError("Meilisearch returned an invalid search hit")
-            documents = tuple(dict(hit) for hit in hits)
-        return SearchResult(documents=documents, total=total, total_is_exact=False)
+        hits = response.get("hits")
+        if not isinstance(hits, list):
+            raise AdapterError("Meilisearch returned invalid search hits")
+        for hit in hits:
+            if not isinstance(hit, Mapping):
+                raise AdapterError("Meilisearch returned an invalid search hit")
+        return SearchResult(
+            documents=tuple(dict(hit) for hit in hits),
+            total=total,
+            total_is_exact=False,
+        )
 
     def mint_credential(
         self,
@@ -302,6 +310,20 @@ class MeilisearchAdapter(Adapter):
         if not isinstance(settings, Mapping):
             raise AdapterError("Meilisearch returned invalid index settings")
         return settings
+
+    def _max_total_hits(self, uid: str) -> int:
+        """Return the live index's page cap, ``pagination.maxTotalHits``."""
+        pagination = self._settings(uid).get("pagination")
+        max_total_hits = (
+            pagination.get("maxTotalHits") if isinstance(pagination, Mapping) else None
+        )
+        if (
+            isinstance(max_total_hits, bool)
+            or not isinstance(max_total_hits, int)
+            or max_total_hits < 0
+        ):
+            raise AdapterError("Meilisearch returned no pagination.maxTotalHits")
+        return max_total_hits
 
     def _update_settings(self, uid: str, settings: Mapping[str, Any]) -> None:
         """Patch the given settings and wait for the task."""

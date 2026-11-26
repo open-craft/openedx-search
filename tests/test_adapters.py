@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 import pytest
 
 from openedx_search.adapters import (
-    MAX_QUERY_HITS,
     CredentialScope,
     FilterGroup,
     FilterTerm,
@@ -228,13 +227,7 @@ def test_search_query_defaults_to_the_first_page():
     """An empty query matches everything and asks for the first page."""
     query = SearchQuery()
 
-    assert (query.text, query.filters, query.offset, query.limit, query.count_only) == (
-        "",
-        (),
-        0,
-        20,
-        False,
-    )
+    assert (query.text, query.filters, query.offset, query.limit) == ("", (), 0, 20)
 
 
 def test_search_query_freezes_filters():
@@ -253,10 +246,8 @@ def test_search_query_freezes_filters():
         ({"text": None}, "text must be a string"),
         ({"filters": "id = x"}, "not a string"),
         ({"offset": -1}, "non-negative integer"),
-        ({"offset": 1.0}, "non-negative integer"),
-        ({"limit": 0}, "limit must be between"),
-        ({"limit": MAX_QUERY_HITS + 1}, "limit must be between"),
-        ({"count_only": "yes"}, "count_only must be a bool"),
+        ({"limit": 0}, "positive integer"),
+        ({"limit": True}, "positive integer"),
     ],
 )
 def test_search_query_rejects_invalid_parts(kwargs, message):

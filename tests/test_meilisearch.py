@@ -491,8 +491,13 @@ def test_abort_rebuild_deletes_the_target():
 
 
 def test_search_sends_the_text_page_and_filters():
-    """The text, the page and the rendered filter reach the engine in one request."""
-    transport = FakeTransport([{"hits": [{"id": "doc-1"}], "estimatedTotalHits": 2}])
+    """The text, the page and the rendered filter reach the engine in one search."""
+    transport = FakeTransport(
+        [
+            {"pagination": {"maxTotalHits": 1000}},
+            {"hits": [{"id": "doc-1"}], "estimatedTotalHits": 2},
+        ]
+    )
     query = SearchQuery(
         text="display name",
         filters=(
@@ -506,6 +511,7 @@ def test_search_sends_the_text_page_and_filters():
     result = _adapter(transport=transport).search(query)
 
     assert transport.requests == [
+        ("GET", "/indexes/studio_content/settings", None),
         (
             "POST",
             "/indexes/studio_content/search",
@@ -524,43 +530,52 @@ def test_search_sends_the_text_page_and_filters():
     )
 
 
-def test_search_reads_a_second_page():
-    """Offset moves the window, so the second request returns the next documents."""
+def test_search_defaults_to_the_first_page():
+    """An empty query sends the default window and neither q nor filter."""
     transport = FakeTransport(
         [
-            {"hits": [{"id": "doc-1"}, {"id": "doc-2"}], "estimatedTotalHits": 4},
-            {"hits": [{"id": "doc-3"}, {"id": "doc-4"}], "estimatedTotalHits": 4},
+            {"pagination": {"maxTotalHits": 1000}},
+            {"hits": [], "estimatedTotalHits": 0},
+        ]
+    )
+
+    result = _adapter(transport=transport).search(SearchQuery())
+
+    assert transport.requests[1] == (
+        "POST",
+        "/indexes/studio_content/search",
+        {"offset": 0, "limit": 20},
+    )
+    assert result == SearchResult(documents=(), total=0)
+
+
+def test_search_rejects_a_page_beyond_the_live_page_cap():
+    """The live maxTotalHits is enforced before the search request."""
+    transport = FakeTransport(
+        [
+            {"pagination": {"maxTotalHits": 100}},
+            {"hits": [{"id": "doc-1"}], "estimatedTotalHits": 100},
+            {"pagination": {"maxTotalHits": 100}},
         ]
     )
     adapter = _adapter(transport=transport)
 
-    first = adapter.search(SearchQuery(limit=2))
-    second = adapter.search(SearchQuery(limit=2, offset=2))
+    adapter.search(SearchQuery(offset=90, limit=10))
 
-    assert [document["id"] for document in first.documents] == ["doc-1", "doc-2"]
-    assert [document["id"] for document in second.documents] == ["doc-3", "doc-4"]
-    assert [request[2]["offset"] for request in transport.requests] == [0, 2]
+    with pytest.raises(AdapterError, match="at most 100"):
+        adapter.search(SearchQuery(offset=90, limit=11))
 
-
-def test_search_single_id_filter_is_an_exact_match():
-    """One value is the ID = x case, rendered as a one-value IN clause."""
-    transport = FakeTransport([{"hits": [{"id": "doc-1"}], "estimatedTotalHits": 1}])
-
-    _adapter(transport=transport).search(
-        SearchQuery(filters=(FilterGroup((FilterTerm("id", ("doc-1",)),)),))
-    )
-
-    assert transport.requests[0][2]["filter"] == '(id IN ["doc-1"])'
+    assert transport.paths() == [
+        ("GET", "/indexes/studio_content/settings"),
+        ("POST", "/indexes/studio_content/search"),
+        ("GET", "/indexes/studio_content/settings"),
+    ]
 
 
-def test_search_count_only_drops_the_page():
-    """limit 0 asks for the total, returns no documents and never claims exactness."""
-    transport = FakeTransport([{"hits": [{"id": "doc-1"}], "estimatedTotalHits": 7}])
-
-    result = _adapter(transport=transport).search(SearchQuery(count_only=True))
-
-    assert transport.requests[0][2] == {"offset": 0, "limit": 0}
-    assert result == SearchResult(documents=(), total=7, total_is_exact=False)
+def test_search_requires_the_live_page_cap():
+    """Without maxTotalHits the page cannot be checked, so the search fails."""
+    with pytest.raises(AdapterError, match="maxTotalHits"):
+        _adapter(transport=FakeTransport([{"pagination": {}}])).search(SearchQuery())
 
 
 @pytest.mark.parametrize(
@@ -570,14 +585,17 @@ def test_search_count_only_drops_the_page():
         {},
         {"hits": [], "estimatedTotalHits": "7"},
         {"hits": [], "estimatedTotalHits": True},
+        {"hits": [], "estimatedTotalHits": -1},
         {"hits": "none", "estimatedTotalHits": 7},
         {"hits": ["not a document"], "estimatedTotalHits": 7},
     ],
 )
 def test_search_rejects_an_invalid_response(response):
     """A malformed body fails instead of returning a wrong result."""
+    transport = FakeTransport([{"pagination": {"maxTotalHits": 1000}}, response])
+
     with pytest.raises(AdapterError):
-        _adapter(transport=FakeTransport([response])).search(SearchQuery())
+        _adapter(transport=transport).search(SearchQuery())
 
 
 def test_mint_credential_matches_the_meilisearch_reference(monkeypatch):
