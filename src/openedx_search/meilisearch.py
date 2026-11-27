@@ -230,7 +230,7 @@ class MeilisearchAdapter(Adapter):
         if not isinstance(response, Mapping):
             raise AdapterError("Meilisearch returned an invalid search response")
         total = response.get("estimatedTotalHits")
-        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        if not _is_nonnegative_int(total):
             raise AdapterError("Meilisearch returned no estimated total")
         hits = response.get("hits")
         if not isinstance(hits, list):
@@ -317,11 +317,7 @@ class MeilisearchAdapter(Adapter):
         max_total_hits = (
             pagination.get("maxTotalHits") if isinstance(pagination, Mapping) else None
         )
-        if (
-            isinstance(max_total_hits, bool)
-            or not isinstance(max_total_hits, int)
-            or max_total_hits < 0
-        ):
+        if not _is_nonnegative_int(max_total_hits):
             raise AdapterError("Meilisearch returned no pagination.maxTotalHits")
         return max_total_hits
 
@@ -458,6 +454,11 @@ def _task_id(response: object) -> int:
     if isinstance(task_id, bool) or not isinstance(task_id, int):
         raise AdapterError("Meilisearch did not acknowledge the request with a task")
     return task_id
+
+
+def _is_nonnegative_int(value: object) -> bool:
+    """Return whether the engine sent a count: an int, not a bool, at least zero."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _task_error(task: object) -> str:

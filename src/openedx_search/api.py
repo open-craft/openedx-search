@@ -196,9 +196,7 @@ def search(use_case: str, query: SearchQuery) -> SearchResult:
     registration's schema; ``id`` is always allowed. This is for maintenance
     and conformance, not the frontend search path. The browser queries the
     engine directly with a scoped credential, so this does not proxy the
-    frontend's searches. Nothing is created or configured, so the index must
-    already exist under its logical name, and an adapter may reject a page its
-    engine cannot return in full. Whether ``total`` is exact is the engine's
+    frontend's searches. Whether ``total`` is exact is the engine's
     property, reported in ``SearchResult.total_is_exact``.
     """
     if not isinstance(query, SearchQuery):
