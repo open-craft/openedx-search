@@ -59,6 +59,13 @@ connection URL, while ``public_url`` is the one the browser uses and defaults to
 required, ``search_api_key`` and ``public_url`` are optional, and any other key is
 rejected, so a typo fails at resolution.
 
+``api_key`` is the key the library itself sends, so it needs the permissions of
+every call the library makes. On Meilisearch that includes the ``search`` action
+for ``api.search()``, in addition to the ``settings.get`` the adapter already
+needs to reconcile settings and to check the page limit. ``search_api_key``
+stays optional and unrelated to these calls: it is the parent key for scoped
+tenant credentials.
+
 Loading registrations
 *********************
 

@@ -197,7 +197,11 @@ def search(use_case: str, query: SearchQuery) -> SearchResult:
     and conformance, not the frontend search path. The browser queries the
     engine directly with a scoped credential, so this does not proxy the
     frontend's searches. Whether ``total`` is exact is the engine's
-    property, reported in ``SearchResult.total_is_exact``.
+    property, reported in ``SearchResult.total_is_exact``. An adapter may reject
+    a page window beyond its engine's limit even when ``total`` reports more
+    matches. The request uses the backend's ``api_key``: on Meilisearch
+    that key needs the ``search`` action as well as the ``settings.get`` read
+    the adapter already performs for reconcile.
     """
     if not isinstance(query, SearchQuery):
         raise ValueError("query must be a SearchQuery")

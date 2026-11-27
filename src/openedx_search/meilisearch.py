@@ -205,8 +205,8 @@ class MeilisearchAdapter(Adapter):
         page is checked first against the live ``pagination.maxTotalHits`` from
         ``GET /indexes/{uid}/settings``, which costs one extra request per
         search, so a window Meilisearch would clamp is rejected instead of
-        returning a short page. ``estimatedTotalHits`` is an estimate capped by
-        that setting, so it is never reported as exact.
+        returning a short page. ``estimatedTotalHits`` is an estimate, not an
+        exact count, so it is never reported as exact.
         """
         max_total_hits = self._max_total_hits(self.index)
         if query.offset + query.limit > max_total_hits:

@@ -125,12 +125,14 @@ The engine is a deployment choice, configured once per deployment:
 Resolution is per use case: override, then deployment default, then an error.
 The library ships no default engine.
 
-``api_key`` is the key the adapter uses for writes. ``search_api_key`` is the
-parent key for minting scoped search credentials, and Typesense requires it:
-the parent of a scoped key must allow only ``documents:search``, so the write key
-cannot mint one. Meilisearch mints tenant tokens from ``api_key`` and can omit
-it. ``url`` is the connection URL the backend uses, while ``public_url`` is the
-one the browser uses and defaults to ``url``. They differ when the engine is
+``api_key`` is the key the adapter sends, for writes and for the reads behind
+``search``; on Meilisearch it needs the ``search`` action in addition to the
+``settings.get`` read. ``search_api_key`` is the parent key for minting scoped
+search credentials, and Typesense requires it: the parent of a scoped key must
+allow only ``documents:search``, so the write key cannot mint one. Meilisearch
+mints tenant tokens from ``api_key`` and can omit it. ``url`` is the connection
+URL the backend uses, while ``public_url`` is the one the browser uses and
+defaults to ``url``. They differ when the engine is
 reachable internally but exposed through a proxy or a TLS terminator.
 ``engine``, ``url`` and ``api_key`` are required, ``search_api_key`` and
 ``public_url`` are optional, and any other key is rejected. The entry is typed
@@ -319,7 +321,7 @@ library adds only the behaviour below.
      - Library-owned behaviour
    * - ``search``
      - ``search``
-     - none
+     - validate filter fields
    * - ``mint_credential``
      - ``mint_credential``
      - none
@@ -329,7 +331,8 @@ library adds only the behaviour below.
        during rebuild
    * - ``delete``
      - ``delete``
-     - normalize ``primary_keys``; exactly one form; dual-write
+     - normalize ``primary_keys``; exactly one form; validate filter fields;
+       dual-write
    * - ``check_write``
      - ``check_write``
      - none; the worker owns backoff
@@ -346,11 +349,13 @@ Filters are exact matches. ``FilterExpression`` is a sequence of
 values combined with OR. Studio's tenant filter is one group with ``org IN
 [...]`` and ``access_id IN [...]``: the fields are alternatives, not
 requirements. Adapters render the expression in their own syntax, and raw engine
-filters never cross the API. Values are strings, integers, floats, booleans or a
-timezone-aware ``datetime``. A datetime is rendered as POSIX seconds, the same
-type documents accept. ``None`` is not a value: documents carry no nulls, and
-"field is absent"
-is a separate operator with its own engine syntax. The model covers exact
+filters never cross the API. ``search`` and ``delete`` check every term's field
+against the registration's schema before the adapter sees it: the field must be
+declared and filterable, and ``id`` is always allowed. Values are strings,
+integers, floats, booleans or a timezone-aware ``datetime``. A datetime is
+rendered as POSIX seconds, the same type documents accept. ``None`` is not a
+value: documents carry no nulls, and "field is absent" is a separate operator
+with its own engine syntax. The model covers exact
 matches combined with AND and
 OR. Negation, ranges and field-to-field comparisons are out of scope until a
 consumer needs one; adding it extends ``FilterTerm`` rather than the expression
